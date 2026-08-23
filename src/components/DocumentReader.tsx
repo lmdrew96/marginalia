@@ -53,18 +53,55 @@ export function DocumentReader({
   );
   const [error, setError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [htmlContent, setHtmlContent] = useState(content);
+  const [ocrRunning, setOcrRunning] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+  const pendingOcrCount = (htmlContent.match(/data-ocr="pending"/g) ?? [])
+    .length;
 
   useEffect(() => {
     const root = contentRef.current;
     if (!root) return;
-    root.innerHTML = content;
+    root.innerHTML = htmlContent;
     for (const highlight of initialHighlights) {
       applyHighlightToDom(root, highlight);
     }
     // Only re-run if the document itself changes — this effect owns the
     // subtree imperatively from here on, React must never re-render it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [documentId, content]);
+  }, [documentId, htmlContent]);
+
+  async function runOcr() {
+    setOcrRunning(true);
+    setOcrError(null);
+    try {
+      // The endpoint caps how many pages it OCRs per call so one request
+      // can't run past the function's time limit — loop until nothing's
+      // left pending or a call fails.
+      for (;;) {
+        const res = await fetch(`/api/documents/${documentId}/ocr`, {
+          method: "POST",
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "OCR failed");
+        setHtmlContent(data.content);
+        // ocred === 0 means this pass made no progress (every remaining
+        // page failed) — stop instead of retrying the same failures forever.
+        if (data.remaining <= 0 || data.ocred === 0) {
+          if (data.remaining > 0) {
+            setOcrError(
+              `${data.remaining} page(s) couldn't be transcribed — try again later.`,
+            );
+          }
+          break;
+        }
+      }
+    } catch (err) {
+      setOcrError(err instanceof Error ? err.message : "OCR failed");
+    } finally {
+      setOcrRunning(false);
+    }
+  }
 
   async function handleMouseUp() {
     const selection = window.getSelection();
@@ -191,7 +228,21 @@ export function DocumentReader({
           {!chatOpen && <ChatIcon className="h-4 w-4" />}
           {chatOpen ? "Close chat" : "Ask Claude"}
         </button>
+
+        {pendingOcrCount > 0 && (
+          <button
+            onClick={runOcr}
+            disabled={ocrRunning}
+            className="rounded-md border border-border px-3 py-1.5 disabled:opacity-50"
+          >
+            {ocrRunning
+              ? "Scanning pages…"
+              : `Run OCR (${pendingOcrCount} page${pendingOcrCount === 1 ? "" : "s"})`}
+          </button>
+        )}
       </div>
+
+      {ocrError && <p className="text-sm text-error">{ocrError}</p>}
 
       <div className="flex w-full flex-1 justify-center gap-4 overflow-hidden">
         <div

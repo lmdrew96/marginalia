@@ -14,12 +14,13 @@ const ALLOWED_TAGS = [
   "br",
   "span",
   "img",
+  "a",
 ];
 
 export function sanitizeDocumentHtml(html: string): string {
   return DOMPurify.sanitize(html, {
     ALLOWED_TAGS,
-    ALLOWED_ATTR: ["src", "alt"],
+    ALLOWED_ATTR: ["src", "alt", "href", "data-ocr"],
   });
 }
 
