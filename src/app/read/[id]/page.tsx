@@ -2,8 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/db";
-import { highlights, bookmarks } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { highlights, bookmarks, chatMessages } from "@/db/schema";
+import { eq, asc, desc } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { getDownloadUrl } from "@/lib/r2";
 import { PdfReader } from "@/components/PdfReader";
@@ -20,19 +20,27 @@ export default async function ReadPage({
   const doc = await getOwnedDocument(id, userId);
   if (!doc) notFound();
 
-  const [downloadUrl, docHighlights, docBookmarks] = await Promise.all([
-    getDownloadUrl(doc.fileUrl),
-    db
-      .select()
-      .from(highlights)
-      .where(eq(highlights.documentId, id))
-      .orderBy(asc(highlights.pageNumber)),
-    db
-      .select()
-      .from(bookmarks)
-      .where(eq(bookmarks.documentId, id))
-      .orderBy(asc(bookmarks.pageNumber)),
-  ]);
+  const [downloadUrl, docHighlights, docBookmarks, recentChat] =
+    await Promise.all([
+      getDownloadUrl(doc.fileUrl),
+      db
+        .select()
+        .from(highlights)
+        .where(eq(highlights.documentId, id))
+        .orderBy(asc(highlights.pageNumber)),
+      db
+        .select()
+        .from(bookmarks)
+        .where(eq(bookmarks.documentId, id))
+        .orderBy(asc(bookmarks.pageNumber)),
+      db
+        .select()
+        .from(chatMessages)
+        .where(eq(chatMessages.documentId, id))
+        .orderBy(desc(chatMessages.createdAt))
+        .limit(20),
+    ]);
+  const docChatMessages = recentChat.reverse();
 
   return (
     <div className="flex flex-1 flex-col">
@@ -48,6 +56,7 @@ export default async function ReadPage({
         fileUrl={downloadUrl}
         initialHighlights={docHighlights}
         initialBookmarks={docBookmarks}
+        initialChatMessages={docChatMessages}
       />
     </div>
   );

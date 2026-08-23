@@ -1,35 +1,32 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import {
-  getDocument,
-  GlobalWorkerOptions,
-  TextLayer,
-  type PDFDocumentProxy,
-} from "pdfjs-dist";
-import type { Highlight, Bookmark } from "@/db/schema";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
+import type { Highlight, Bookmark, ChatMessage } from "@/db/schema";
 import {
   HIGHLIGHT_COLORS,
   HIGHLIGHT_COLOR_STYLES,
   type HighlightColor,
   type PositionAnchor,
 } from "@/lib/highlight-types";
-
-GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+import { ChatSidebar } from "@/components/ChatSidebar";
 
 export function PdfReader({
   documentId,
   fileUrl,
   initialHighlights,
   initialBookmarks,
+  initialChatMessages,
 }: {
   documentId: string;
   fileUrl: string;
   initialHighlights: Highlight[];
   initialBookmarks: Bookmark[];
+  initialChatMessages: ChatMessage[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const textLayerRef = useRef<HTMLDivElement>(null);
+  const highlightLayerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null);
@@ -39,16 +36,22 @@ export function PdfReader({
   const [highlights, setHighlights] = useState<Highlight[]>(initialHighlights);
   const [bookmarks, setBookmarks] = useState<Bookmark[]>(initialBookmarks);
   const [error, setError] = useState<string | null>(null);
+  const [pageText, setPageText] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
+  const pdfjsRef = useRef<typeof import("pdfjs-dist") | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getDocument({ url: fileUrl })
-      .promise.then((doc) => {
-        if (cancelled) return;
-        setPdfDoc(doc);
-        setNumPages(doc.numPages);
-      })
-      .catch(() => !cancelled && setError("Couldn't load this PDF."));
+    (async () => {
+      const pdfjs = await import("pdfjs-dist");
+      pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+      pdfjsRef.current = pdfjs;
+
+      const doc = await pdfjs.getDocument({ url: fileUrl }).promise;
+      if (cancelled) return;
+      setPdfDoc(doc);
+      setNumPages(doc.numPages);
+    })().catch(() => !cancelled && setError("Couldn't load this PDF."));
     return () => {
       cancelled = true;
     };
@@ -57,11 +60,11 @@ export function PdfReader({
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current || !textLayerRef.current) return;
     let cancelled = false;
-    let renderTask: ReturnType<
-      import("pdfjs-dist").PDFPageProxy["render"]
-    > | null = null;
+    let renderTask: ReturnType<PDFPageProxy["render"]> | null = null;
 
     (async () => {
+      const pdfjs = pdfjsRef.current;
+      if (!pdfjs) return;
       const page = await pdfDoc.getPage(currentPage);
       if (cancelled) return;
 
@@ -77,18 +80,33 @@ export function PdfReader({
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
 
+      if (highlightLayerRef.current) {
+        highlightLayerRef.current.style.width = `${viewport.width}px`;
+        highlightLayerRef.current.style.height = `${viewport.height}px`;
+      }
+
       renderTask = page.render({ canvasContext: ctx, viewport, canvas });
       await renderTask.promise;
       if (cancelled) return;
 
       const textLayerDiv = textLayerRef.current!;
       textLayerDiv.innerHTML = "";
-      textLayerDiv.style.width = `${viewport.width}px`;
-      textLayerDiv.style.height = `${viewport.height}px`;
+      // TextLayer's constructor sets width/height itself via a CSS round()
+      // expression driven by these custom properties — without them the
+      // expression is invalid and the layer collapses to 0×0 (unclickable).
+      textLayerDiv.style.setProperty("--total-scale-factor", `${scale}`);
+      textLayerDiv.style.setProperty("--scale-round-x", "1px");
+      textLayerDiv.style.setProperty("--scale-round-y", "1px");
 
       const textContent = await page.getTextContent();
       if (cancelled) return;
-      const textLayer = new TextLayer({
+      setPageText(
+        textContent.items
+          .map((item) => ("str" in item ? item.str : ""))
+          .join(" ")
+          .trim(),
+      );
+      const textLayer = new pdfjs.TextLayer({
         textContentSource: textContent,
         container: textLayerDiv,
         viewport,
@@ -228,40 +246,62 @@ export function PdfReader({
         >
           {currentBookmark ? "★ Bookmarked" : "☆ Bookmark this page"}
         </button>
+
+        <button
+          onClick={() => setChatOpen((v) => !v)}
+          className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
+        >
+          {chatOpen ? "Close chat" : "💬 Ask Claude"}
+        </button>
       </div>
 
-      <div
-        ref={containerRef}
-        className="relative w-full max-w-3xl"
-        onMouseUp={handleMouseUp}
-      >
-        <canvas ref={canvasRef} className="mx-auto block" />
+      <div className="flex w-full flex-1 justify-center gap-4 overflow-hidden">
         <div
-          ref={textLayerRef}
-          className="textLayer absolute left-1/2 top-0 -translate-x-1/2"
-        />
-        <div className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2">
-          {pageHighlights.map((h) => {
-            const anchor = h.positionAnchor as PositionAnchor;
-            return anchor.rects.map((r, i) => (
-              <div
-                key={`${h.id}-${i}`}
-                className="pointer-events-auto absolute cursor-pointer"
-                title="Click to remove highlight"
-                onClick={() => deleteHighlight(h.id)}
-                style={{
-                  left: `${r.xFrac * 100}%`,
-                  top: `${r.yFrac * 100}%`,
-                  width: `${r.wFrac * 100}%`,
-                  height: `${r.hFrac * 100}%`,
-                  backgroundColor:
-                    HIGHLIGHT_COLOR_STYLES[h.color as HighlightColor] ??
-                    HIGHLIGHT_COLOR_STYLES.yellow,
-                }}
-              />
-            ));
-          })}
+          ref={containerRef}
+          className="relative h-fit w-full max-w-3xl"
+          onMouseUp={handleMouseUp}
+        >
+          <canvas ref={canvasRef} className="mx-auto block" />
+          <div
+            ref={textLayerRef}
+            className="textLayer absolute left-1/2 top-0 -translate-x-1/2"
+          />
+          <div
+            ref={highlightLayerRef}
+            className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2"
+          >
+            {pageHighlights.map((h) => {
+              const anchor = h.positionAnchor as PositionAnchor;
+              return anchor.rects.map((r, i) => (
+                <div
+                  key={`${h.id}-${i}`}
+                  className="pointer-events-auto absolute cursor-pointer"
+                  title="Click to remove highlight"
+                  onClick={() => deleteHighlight(h.id)}
+                  style={{
+                    left: `${r.xFrac * 100}%`,
+                    top: `${r.yFrac * 100}%`,
+                    width: `${r.wFrac * 100}%`,
+                    height: `${r.hFrac * 100}%`,
+                    backgroundColor:
+                      HIGHLIGHT_COLOR_STYLES[h.color as HighlightColor] ??
+                      HIGHLIGHT_COLOR_STYLES.yellow,
+                  }}
+                />
+              ));
+            })}
+          </div>
         </div>
+
+        <ChatSidebar
+          documentId={documentId}
+          pageNumber={currentPage}
+          pageText={pageText}
+          pageHighlights={pageHighlights}
+          initialMessages={initialChatMessages}
+          open={chatOpen}
+          onClose={() => setChatOpen(false)}
+        />
       </div>
     </div>
   );
