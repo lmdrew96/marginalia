@@ -1,11 +1,4 @@
-import {
-  pgTable,
-  uuid,
-  text,
-  integer,
-  jsonb,
-  timestamp,
-} from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, integer, timestamp } from "drizzle-orm/pg-core";
 
 export const documents = pgTable("documents", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -13,6 +6,7 @@ export const documents = pgTable("documents", {
   title: text("title").notNull(),
   fileUrl: text("file_url").notNull(),
   format: text("format").notNull().default("pdf"),
+  content: text("content").notNull(),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -23,9 +17,9 @@ export const highlights = pgTable("highlights", {
   documentId: uuid("document_id")
     .notNull()
     .references(() => documents.id, { onDelete: "cascade" }),
-  pageNumber: integer("page_number").notNull(),
+  startOffset: integer("start_offset").notNull(),
+  endOffset: integer("end_offset").notNull(),
   textContent: text("text_content").notNull(),
-  positionAnchor: jsonb("position_anchor").notNull(),
   color: text("color").notNull().default("yellow"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
@@ -37,7 +31,7 @@ export const bookmarks = pgTable("bookmarks", {
   documentId: uuid("document_id")
     .notNull()
     .references(() => documents.id, { onDelete: "cascade" }),
-  pageNumber: integer("page_number").notNull(),
+  offset: integer("offset").notNull(),
   label: text("label"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

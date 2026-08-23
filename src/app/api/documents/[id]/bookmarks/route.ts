@@ -24,7 +24,7 @@ export async function GET(
     .select()
     .from(bookmarks)
     .where(eq(bookmarks.documentId, id))
-    .orderBy(asc(bookmarks.pageNumber));
+    .orderBy(asc(bookmarks.offset));
 
   return NextResponse.json(rows);
 }
@@ -44,17 +44,19 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { pageNumber, label } = await req.json();
-  if (!pageNumber) {
+  const { offset, label } = await req.json();
+  if (typeof offset !== "number") {
     return NextResponse.json(
-      { error: "pageNumber is required" },
+      { error: "offset is required" },
       { status: 400 },
     );
   }
 
+  // Single reading-position marker per document — replace any existing one.
+  await db.delete(bookmarks).where(eq(bookmarks.documentId, id));
   const [bookmark] = await db
     .insert(bookmarks)
-    .values({ documentId: id, pageNumber, label })
+    .values({ documentId: id, offset, label })
     .returning();
 
   return NextResponse.json(bookmark, { status: 201 });

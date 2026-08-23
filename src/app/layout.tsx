@@ -30,9 +30,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         lang="en"
         data-theme="moss"
         data-mode="light"
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       >
         <body className="min-h-full flex flex-col">
+          <Script
+            id="theme-init"
+            strategy="beforeInteractive"
+            dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+          />
           <Show when="signed-in">
             <div className="flex items-center justify-between border-b border-border px-6 py-2">
               <Link href="/library" className="text-sm font-semibold">
@@ -46,11 +52,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </Show>
           {children}
         </body>
-        <Script
-          id="theme-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
       </html>
     </ClerkProvider>
   );

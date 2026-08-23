@@ -1,4 +1,9 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const r2 = new S3Client({
@@ -24,4 +29,31 @@ export async function getUploadUrl(key: string, contentType: string) {
 export async function getDownloadUrl(key: string) {
   const command = new GetObjectCommand({ Bucket: BUCKET, Key: key });
   return getSignedUrl(r2, command, { expiresIn: 3600 });
+}
+
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const command = new GetObjectCommand({ Bucket: BUCKET, Key: key });
+  const { Body } = await r2.send(command);
+  if (!Body) throw new Error(`R2 object not found: ${key}`);
+  const bytes = await Body.transformToByteArray();
+  return Buffer.from(bytes);
+}
+
+export async function deleteObject(key: string): Promise<void> {
+  await r2.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+}
+
+export async function putObject(
+  key: string,
+  body: Buffer,
+  contentType: string,
+): Promise<void> {
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
 }

@@ -1,6 +1,6 @@
 {
   "name": "marginalia",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -15,14 +15,18 @@
     "@clerk/nextjs": "^7.8.0",
     "@neondatabase/serverless": "^1.1.0",
     "drizzle-orm": "^0.45.2",
+    "isomorphic-dompurify": "^3.22.0",
+    "jpeg-js": "^0.4.4",
     "next": "16.3.2",
     "pdfjs-dist": "^6.2.108",
+    "pngjs": "^7.0.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",

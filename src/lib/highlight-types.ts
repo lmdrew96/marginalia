@@ -1,12 +1,6 @@
-export type HighlightRect = {
-  xFrac: number;
-  yFrac: number;
-  wFrac: number;
-  hFrac: number;
-};
-
-export type PositionAnchor = {
-  rects: HighlightRect[];
+export type OffsetRange = {
+  startOffset: number;
+  endOffset: number;
 };
 
 export const HIGHLIGHT_COLORS = ["yellow", "green", "blue", "pink"] as const;

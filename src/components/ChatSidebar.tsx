@@ -12,17 +12,13 @@ type DisplayMessage = {
 
 export function ChatSidebar({
   documentId,
-  pageNumber,
-  pageText,
-  pageHighlights,
+  highlights,
   initialMessages,
   open,
   onClose,
 }: {
   documentId: string;
-  pageNumber: number;
-  pageText: string;
-  pageHighlights: Highlight[];
+  highlights: Highlight[];
   initialMessages: ChatMessage[];
   open: boolean;
   onClose: () => void;
@@ -61,7 +57,7 @@ export function ChatSidebar({
       const res = await fetch(`/api/documents/${documentId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, pageNumber, pageText }),
+        body: JSON.stringify({ message: text }),
       });
 
       if (!res.ok || !res.body) {
@@ -105,12 +101,12 @@ export function ChatSidebar({
         </button>
       </div>
 
-      {pageHighlights.length > 0 && (
+      {highlights.length > 0 && (
         <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3">
           <p className="text-xs font-medium text-secondary">
-            Highlights on this page
+            Highlights you&apos;ve made
           </p>
-          {pageHighlights.map((h) => (
+          {highlights.map((h) => (
             <button
               key={h.id}
               onClick={() =>
@@ -130,8 +126,7 @@ export function ChatSidebar({
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
         {messages.length === 0 ? (
           <p className="text-sm text-secondary">
-            Ask a question about page {pageNumber} — I can only see this page
-            unless you tell me otherwise.
+            Ask a question about this reading.
           </p>
         ) : (
           <div className="flex flex-col gap-3">
@@ -162,7 +157,7 @@ export function ChatSidebar({
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about this page…"
+          placeholder="Ask about this reading…"
           disabled={sending}
           className="flex-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm disabled:opacity-50"
         />

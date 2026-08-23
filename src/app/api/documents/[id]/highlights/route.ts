@@ -24,7 +24,7 @@ export async function GET(
     .select()
     .from(highlights)
     .where(eq(highlights.documentId, id))
-    .orderBy(asc(highlights.pageNumber), asc(highlights.createdAt));
+    .orderBy(asc(highlights.startOffset));
 
   return NextResponse.json(rows);
 }
@@ -44,10 +44,14 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { pageNumber, textContent, positionAnchor, color } = await req.json();
-  if (!pageNumber || !textContent || !positionAnchor) {
+  const { startOffset, endOffset, textContent, color } = await req.json();
+  if (
+    typeof startOffset !== "number" ||
+    typeof endOffset !== "number" ||
+    !textContent
+  ) {
     return NextResponse.json(
-      { error: "pageNumber, textContent, and positionAnchor are required" },
+      { error: "startOffset, endOffset, and textContent are required" },
       { status: 400 },
     );
   }
@@ -56,9 +60,9 @@ export async function POST(
     .insert(highlights)
     .values({
       documentId: id,
-      pageNumber,
+      startOffset,
+      endOffset,
       textContent,
-      positionAnchor,
       color: color ?? "yellow",
     })
     .returning();

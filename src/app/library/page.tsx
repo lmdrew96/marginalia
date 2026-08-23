@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { documents } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { UploadDocument } from "@/components/UploadDocument";
+import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 
 export default async function LibraryPage() {
   const { userId } = await auth();
@@ -30,10 +31,13 @@ export default async function LibraryPage() {
       ) : (
         <ul className="flex flex-col gap-2">
           {docs.map((doc) => (
-            <li key={doc.id}>
+            <li
+              key={doc.id}
+              className="group flex items-center rounded-lg border border-border transition-colors hover:bg-surface"
+            >
               <Link
                 href={`/read/${doc.id}`}
-                className="group flex items-center justify-between rounded-lg border border-border px-4 py-3 transition-colors hover:bg-surface"
+                className="flex flex-1 items-center justify-between px-4 py-3"
               >
                 <span className="font-medium group-hover:text-on-surface">
                   {doc.title}
@@ -42,6 +46,9 @@ export default async function LibraryPage() {
                   {new Date(doc.uploadedAt).toLocaleDateString()}
                 </span>
               </Link>
+              <div className="pr-3">
+                <DeleteDocumentButton documentId={doc.id} title={doc.title} />
+              </div>
             </li>
           ))}
         </ul>

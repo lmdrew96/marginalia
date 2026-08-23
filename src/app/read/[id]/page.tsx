@@ -5,8 +5,7 @@ import { db } from "@/db";
 import { highlights, bookmarks, chatMessages } from "@/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
-import { getDownloadUrl } from "@/lib/r2";
-import { PdfReader } from "@/components/PdfReader";
+import { DocumentReader } from "@/components/DocumentReader";
 
 export default async function ReadPage({
   params,
@@ -20,26 +19,24 @@ export default async function ReadPage({
   const doc = await getOwnedDocument(id, userId);
   if (!doc) notFound();
 
-  const [downloadUrl, docHighlights, docBookmarks, recentChat] =
-    await Promise.all([
-      getDownloadUrl(doc.fileUrl),
-      db
-        .select()
-        .from(highlights)
-        .where(eq(highlights.documentId, id))
-        .orderBy(asc(highlights.pageNumber)),
-      db
-        .select()
-        .from(bookmarks)
-        .where(eq(bookmarks.documentId, id))
-        .orderBy(asc(bookmarks.pageNumber)),
-      db
-        .select()
-        .from(chatMessages)
-        .where(eq(chatMessages.documentId, id))
-        .orderBy(desc(chatMessages.createdAt))
-        .limit(20),
-    ]);
+  const [docHighlights, docBookmarks, recentChat] = await Promise.all([
+    db
+      .select()
+      .from(highlights)
+      .where(eq(highlights.documentId, id))
+      .orderBy(asc(highlights.startOffset)),
+    db
+      .select()
+      .from(bookmarks)
+      .where(eq(bookmarks.documentId, id))
+      .orderBy(asc(bookmarks.offset)),
+    db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.documentId, id))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(20),
+  ]);
   const docChatMessages = recentChat.reverse();
 
   return (
@@ -51,9 +48,9 @@ export default async function ReadPage({
         <h1 className="text-sm font-medium">{doc.title}</h1>
         <span />
       </header>
-      <PdfReader
+      <DocumentReader
         documentId={id}
-        fileUrl={downloadUrl}
+        content={doc.content}
         initialHighlights={docHighlights}
         initialBookmarks={docBookmarks}
         initialChatMessages={docChatMessages}

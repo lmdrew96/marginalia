@@ -6,9 +6,9 @@ import { useRef, useState } from "react";
 export function UploadDocument() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [status, setStatus] = useState<"idle" | "uploading" | "error">(
-    "idle",
-  );
+  const [status, setStatus] = useState<
+    "idle" | "uploading" | "converting" | "error"
+  >("idle");
   const [error, setError] = useState<string | null>(null);
 
   async function handleFile(file: File) {
@@ -34,6 +34,7 @@ export function UploadDocument() {
       });
       if (!putRes.ok) throw new Error("Upload to storage failed");
 
+      setStatus("converting");
       const docRes = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -67,11 +68,20 @@ export function UploadDocument() {
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        disabled={status === "uploading"}
+        disabled={status === "uploading" || status === "converting"}
         className="rounded-full bg-foreground px-5 py-2.5 font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
       >
-        {status === "uploading" ? "Uploading…" : "Upload a PDF"}
+        {status === "uploading"
+          ? "Uploading…"
+          : status === "converting"
+            ? "Converting…"
+            : "Upload a PDF"}
       </button>
+      {status === "converting" && (
+        <p className="text-xs text-secondary">
+          Extracting text and images — this can take a bit for longer PDFs.
+        </p>
+      )}
       {error && <p className="text-sm text-error">{error}</p>}
     </div>
   );

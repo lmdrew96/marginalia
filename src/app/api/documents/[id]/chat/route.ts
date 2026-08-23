@@ -5,6 +5,12 @@ import { chatMessages, highlights } from "@/db/schema";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { anthropic, CHAT_MODEL, DAILY_MESSAGE_LIMIT } from "@/lib/anthropic";
+import { stripHtmlToText } from "@/lib/sanitize";
+
+// Stopgap: sends a leading slice of the whole document as context now that
+// there are no discrete pages. Replaced by viewport-scoped context in the
+// chat-rescoping follow-up patch.
+const CONTEXT_CHAR_LIMIT = 12000;
 
 export async function GET(
   _req: Request,
@@ -45,10 +51,10 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { message, pageNumber, pageText } = await req.json();
-  if (!message || !pageNumber || !pageText) {
+  const { message } = await req.json();
+  if (!message) {
     return NextResponse.json(
-      { error: "message, pageNumber, and pageText are required" },
+      { error: "message is required" },
       { status: 400 },
     );
   }
@@ -71,16 +77,8 @@ export async function POST(
     );
   }
 
-  const [pageHighlights, recentHistory] = await Promise.all([
-    db
-      .select()
-      .from(highlights)
-      .where(
-        and(
-          eq(highlights.documentId, id),
-          eq(highlights.pageNumber, pageNumber),
-        ),
-      ),
+  const [docHighlights, recentHistory] = await Promise.all([
+    db.select().from(highlights).where(eq(highlights.documentId, id)),
     db
       .select()
       .from(chatMessages)
@@ -93,19 +91,24 @@ export async function POST(
     .insert(chatMessages)
     .values({ documentId: id, userId, role: "user", content: message });
 
-  const highlightsBlock = pageHighlights.length
-    ? pageHighlights.map((h) => `- "${h.textContent}"`).join("\n")
+  const highlightsBlock = docHighlights.length
+    ? docHighlights.map((h) => `- "${h.textContent}"`).join("\n")
     : "(none)";
 
-  const systemPrompt = `You are Marginalia's reading assistant, embedded in a sidebar next to the PDF the user is reading. Answer using the excerpt below as your primary context — you do not have access to the rest of the document. Keep answers concise and conversational.
+  const contextText = stripHtmlToText(doc.content).slice(
+    0,
+    CONTEXT_CHAR_LIMIT,
+  );
+
+  const systemPrompt = `You are Marginalia's reading assistant, embedded in a sidebar next to the document the user is reading. Answer using the excerpt below as your primary context. Keep answers concise and conversational.
 
 Document: "${doc.title}"
-Page ${pageNumber} text:
+Excerpt:
 """
-${pageText}
+${contextText}
 """
 
-Highlights the reader has made on this page:
+Highlights the reader has made in this document:
 ${highlightsBlock}`;
 
   const orderedHistory = recentHistory.reverse();
