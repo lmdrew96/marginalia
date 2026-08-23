@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ClerkProvider, Show, UserButton } from "@clerk/nextjs";
+import Link from "next/link";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,11 +21,23 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">{children}</body>
-    </html>
+    <ClerkProvider>
+      <html
+        lang="en"
+        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      >
+        <body className="min-h-full flex flex-col">
+          <Show when="signed-in">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-2 dark:border-zinc-800">
+              <Link href="/library" className="text-sm font-semibold">
+                Marginalia
+              </Link>
+              <UserButton />
+            </div>
+          </Show>
+          {children}
+        </body>
+      </html>
+    </ClerkProvider>
   );
 }
