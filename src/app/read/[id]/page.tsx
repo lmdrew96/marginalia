@@ -44,8 +44,8 @@ export default async function ReadPage({
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-3 dark:border-zinc-800">
-        <Link href="/library" className="text-sm text-zinc-500 hover:underline">
+      <header className="flex items-center justify-between border-b border-border px-6 py-3">
+        <Link href="/library" className="text-sm text-secondary hover:underline">
           ← Library
         </Link>
         <h1 className="text-sm font-medium">{doc.title}</h1>

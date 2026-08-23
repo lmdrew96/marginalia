@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider, Show, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import "./globals.css";
+
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('marginalia-theme')||'moss';var m=localStorage.getItem('marginalia-mode')||'light';document.documentElement.setAttribute('data-theme',t);document.documentElement.setAttribute('data-mode',m);}catch(e){}})();`;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,19 +28,29 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <ClerkProvider>
       <html
         lang="en"
+        data-theme="moss"
+        data-mode="light"
         className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
       >
         <body className="min-h-full flex flex-col">
           <Show when="signed-in">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-2 dark:border-zinc-800">
+            <div className="flex items-center justify-between border-b border-border px-6 py-2">
               <Link href="/library" className="text-sm font-semibold">
                 Marginalia
               </Link>
-              <UserButton />
+              <div className="flex items-center gap-3">
+                <ThemeToggle />
+                <UserButton />
+              </div>
             </div>
           </Show>
           {children}
         </body>
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
       </html>
     </ClerkProvider>
   );

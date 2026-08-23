@@ -24,7 +24,7 @@ export default async function LibraryPage() {
       </div>
 
       {docs.length === 0 ? (
-        <p className="text-zinc-600 dark:text-zinc-400">
+        <p className="text-secondary">
           Nothing here yet — upload a PDF to get started.
         </p>
       ) : (
@@ -33,10 +33,12 @@ export default async function LibraryPage() {
             <li key={doc.id}>
               <Link
                 href={`/read/${doc.id}`}
-                className="flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-3 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+                className="group flex items-center justify-between rounded-lg border border-border px-4 py-3 transition-colors hover:bg-surface"
               >
-                <span className="font-medium">{doc.title}</span>
-                <span className="text-sm text-zinc-500">
+                <span className="font-medium group-hover:text-on-surface">
+                  {doc.title}
+                </span>
+                <span className="text-sm text-secondary group-hover:text-on-surface-secondary">
                   {new Date(doc.uploadedAt).toLocaleDateString()}
                 </span>
               </Link>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, Highlight } from "@/db/schema";
+import { CloseIcon } from "@/components/icons";
 
 type DisplayMessage = {
   id: string;
@@ -92,21 +93,21 @@ export function ChatSidebar({
   if (!open) return null;
 
   return (
-    <aside className="flex w-full max-w-sm flex-col border-l border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+    <aside className="flex w-full max-w-sm flex-col border-l border-border">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">Ask about this reading</h2>
         <button
           onClick={onClose}
           aria-label="Close chat"
-          className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
+          className="text-secondary hover:text-foreground"
         >
-          ✕
+          <CloseIcon className="h-4 w-4" />
         </button>
       </div>
 
       {pageHighlights.length > 0 && (
-        <div className="flex flex-col gap-1.5 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-          <p className="text-xs font-medium text-zinc-500">
+        <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3">
+          <p className="text-xs font-medium text-secondary">
             Highlights on this page
           </p>
           {pageHighlights.map((h) => (
@@ -116,9 +117,11 @@ export function ChatSidebar({
                 send(`Can you explain this: "${h.textContent}"`)
               }
               disabled={sending}
-              className="truncate rounded-md border border-zinc-200 px-2 py-1 text-left text-xs text-zinc-600 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-900"
+              className="group truncate rounded-md border border-border px-2 py-1 text-left text-xs text-secondary transition-colors hover:bg-surface disabled:opacity-50"
             >
-              Ask about: “{h.textContent}”
+              <span className="group-hover:text-on-surface-secondary">
+                Ask about: “{h.textContent}”
+              </span>
             </button>
           ))}
         </div>
@@ -126,7 +129,7 @@ export function ChatSidebar({
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
         {messages.length === 0 ? (
-          <p className="text-sm text-zinc-500">
+          <p className="text-sm text-secondary">
             Ask a question about page {pageNumber} — I can only see this page
             unless you tell me otherwise.
           </p>
@@ -138,7 +141,7 @@ export function ChatSidebar({
                 className={
                   m.role === "user"
                     ? "self-end rounded-lg bg-foreground px-3 py-2 text-sm text-background"
-                    : "self-start rounded-lg bg-zinc-100 px-3 py-2 text-sm dark:bg-zinc-900"
+                    : "self-start rounded-lg bg-surface px-3 py-2 text-sm text-on-surface"
                 }
               >
                 {m.content || (m.role === "assistant" && sending ? "…" : "")}
@@ -146,7 +149,7 @@ export function ChatSidebar({
             ))}
           </div>
         )}
-        {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+        {error && <p className="mt-2 text-xs text-error">{error}</p>}
       </div>
 
       <form
@@ -154,14 +157,14 @@ export function ChatSidebar({
           e.preventDefault();
           send(input);
         }}
-        className="flex gap-2 border-t border-zinc-200 p-3 dark:border-zinc-800"
+        className="flex gap-2 border-t border-border p-3"
       >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask about this page…"
           disabled={sending}
-          className="flex-1 rounded-md border border-zinc-300 bg-transparent px-3 py-1.5 text-sm disabled:opacity-50 dark:border-zinc-700"
+          className="flex-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm disabled:opacity-50"
         />
         <button
           type="submit"

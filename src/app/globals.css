@@ -1,22 +1,85 @@
 @import "tailwindcss";
 
+/*
+ * Two themes (Moss, Riga) x two modes (light, dark), selected via
+ * [data-theme]/[data-mode] on <html>. Every text-role color below is
+ * WCAG AA verified (>=4.5:1) against BOTH --background and --surface —
+ * a plain --foreground-on-bg color doesn't reliably meet 4.5:1 on a
+ * card/surface, so on-surface text gets its own --on-surface(-secondary)
+ * tokens rather than reusing --foreground/--secondary there.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  /* Moss — light (default theme) */
+  --background: #efead8;
+  --surface: #d0c8c0;
+  --border: #d0c8c0;
+  --foreground: #59695a;
+  --secondary: #47634b;
+  --on-surface: #4b584c;
+  --on-surface-secondary: #415b45;
+  --accent-fill: #6d9874;
+  --highlight: rgba(109, 152, 116, 0.25);
+  --error: #ce2121;
+}
+
+[data-theme="moss"][data-mode="dark"] {
+  color-scheme: dark;
+  --background: #5a603b;
+  --surface: #888658;
+  --border: #888658;
+  --foreground: #e9d4a0;
+  --secondary: #ffd282;
+  --on-surface: #231b08;
+  --on-surface-secondary: #291a00;
+  --accent-fill: #ab884f;
+  --highlight: rgba(255, 210, 130, 0.3);
+  --error: #f7cbcb;
+}
+
+[data-theme="riga"][data-mode="light"] {
+  color-scheme: light;
+  --background: #eaebe6;
+  --surface: #a3c1d6;
+  --border: #a3c1d6;
+  --foreground: #575f66;
+  --secondary: #7a5f26;
+  --on-surface: #474d53;
+  --on-surface-secondary: #5e491d;
+  --accent-fill: #c4a858;
+  --highlight: rgba(196, 168, 88, 0.3);
+  --error: #cf2121;
+}
+
+[data-theme="riga"][data-mode="dark"] {
+  color-scheme: dark;
+  --background: #2c3639;
+  --surface: #3f4e4f;
+  --border: #3f4e4f;
+  --foreground: #dcd7c9;
+  --secondary: #d3a076;
+  --on-surface: #dcd7c9;
+  --on-surface-secondary: #dcb391;
+  --accent-fill: #a27b5b;
+  --highlight: rgba(211, 160, 118, 0.3);
+  --error: #ea7c7c;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-secondary: var(--secondary);
+  --color-on-surface: var(--on-surface);
+  --color-on-surface-secondary: var(--on-surface-secondary);
+  --color-accent-fill: var(--accent-fill);
+  --color-highlight: var(--highlight);
+  --color-error: var(--error);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
@@ -45,5 +108,5 @@ body {
 }
 
 .textLayer ::selection {
-  background: rgba(37, 99, 235, 0.3);
+  background: var(--highlight);
 }

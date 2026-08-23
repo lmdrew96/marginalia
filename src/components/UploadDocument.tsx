@@ -68,11 +68,11 @@ export function UploadDocument() {
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={status === "uploading"}
-        className="rounded-full bg-foreground px-5 py-2.5 font-medium text-background transition-colors hover:bg-[#383838] disabled:opacity-50 dark:hover:bg-[#ccc]"
+        className="rounded-full bg-foreground px-5 py-2.5 font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
       >
         {status === "uploading" ? "Uploading…" : "Upload a PDF"}
       </button>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-error">{error}</p>}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
   type PositionAnchor,
 } from "@/lib/highlight-types";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { BookmarkIcon, ChatIcon } from "@/components/icons";
 
 export function PdfReader({
   documentId,
@@ -193,7 +194,7 @@ export function PdfReader({
   }
 
   if (error) {
-    return <p className="p-8 text-red-600">{error}</p>;
+    return <p className="p-8 text-error">{error}</p>;
   }
 
   const pageHighlights = highlights.filter(
@@ -207,11 +208,11 @@ export function PdfReader({
           <button
             onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             disabled={currentPage <= 1}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 disabled:opacity-40 dark:border-zinc-700"
+            className="rounded-md border border-border px-3 py-1.5 disabled:opacity-40"
           >
             Prev
           </button>
-          <span className="text-sm text-zinc-600 dark:text-zinc-400">
+          <span className="text-sm text-secondary">
             Page {currentPage} of {numPages || "…"}
           </span>
           <button
@@ -219,7 +220,7 @@ export function PdfReader({
               setCurrentPage((p) => Math.min(numPages, p + 1))
             }
             disabled={currentPage >= numPages}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 disabled:opacity-40 dark:border-zinc-700"
+            className="rounded-md border border-border px-3 py-1.5 disabled:opacity-40"
           >
             Next
           </button>
@@ -242,16 +243,18 @@ export function PdfReader({
 
         <button
           onClick={toggleBookmark}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
+          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5"
         >
-          {currentBookmark ? "★ Bookmarked" : "☆ Bookmark this page"}
+          <BookmarkIcon filled={!!currentBookmark} className="h-4 w-4" />
+          {currentBookmark ? "Bookmarked" : "Bookmark this page"}
         </button>
 
         <button
           onClick={() => setChatOpen((v) => !v)}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 dark:border-zinc-700"
+          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5"
         >
-          {chatOpen ? "Close chat" : "💬 Ask Claude"}
+          {!chatOpen && <ChatIcon className="h-4 w-4" />}
+          {chatOpen ? "Close chat" : "Ask Claude"}
         </button>
       </div>
 
