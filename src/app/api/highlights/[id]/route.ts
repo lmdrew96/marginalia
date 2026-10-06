@@ -6,7 +6,9 @@ import { eq } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { HIGHLIGHT_COLORS, type HighlightColor } from "@/lib/highlight-types";
 
-const ownedHighlight = async (id: string, userId: string) => {
+const MAX_COMMENT_LENGTH = 10_000;
+
+const ownedHighlight =async (id: string, userId: string) => {
   const [highlight] = await db
     .select()
     .from(highlights)
@@ -30,17 +32,42 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { color } = await req.json();
-  if (!HIGHLIGHT_COLORS.includes(color as HighlightColor)) {
+  const { color, comment } = await req.json();
+  if (color === undefined && comment === undefined) {
+    return NextResponse.json(
+      { error: "color or comment is required" },
+      { status: 400 },
+    );
+  }
+  if (
+    color !== undefined &&
+    !HIGHLIGHT_COLORS.includes(color as HighlightColor)
+  ) {
     return NextResponse.json(
       { error: `color must be one of: ${HIGHLIGHT_COLORS.join(", ")}` },
+      { status: 400 },
+    );
+  }
+  if (
+    comment !== undefined &&
+    comment !== null &&
+    (typeof comment !== "string" || comment.length > MAX_COMMENT_LENGTH)
+  ) {
+    return NextResponse.json(
+      {
+        error: `comment must be a string of at most ${MAX_COMMENT_LENGTH} characters, or null`,
+      },
       { status: 400 },
     );
   }
 
   const [updated] = await db
     .update(highlights)
-    .set({ color })
+    .set({
+      ...(color !== undefined && { color }),
+      // A blank comment is the same as no comment.
+      ...(comment !== undefined && { comment: comment?.trim() || null }),
+    })
     .where(eq(highlights.id, id))
     .returning();
   return NextResponse.json(updated);

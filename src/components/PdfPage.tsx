@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { Highlight } from "@/db/schema";
 import {
@@ -10,6 +10,8 @@ import {
   type OcrWord,
 } from "@/lib/highlight-types";
 import { findRangeForOffsets } from "@/lib/dom-offset";
+import { ChatIcon } from "@/components/icons";
+import { MarginNotes, type MarginNote } from "@/components/MarginNotes";
 
 type PdfJs = typeof import("pdfjs-dist");
 
@@ -67,7 +69,9 @@ export function PdfPage({
   scale,
   highlights,
   ocrWords,
+  marginWidth,
   onHighlightColorChange,
+  onHighlightCommentChange,
   onHighlightDelete,
 }: {
   pdf: PDFDocumentProxy;
@@ -78,7 +82,14 @@ export function PdfPage({
   scale: number;
   highlights: Highlight[];
   ocrWords: OcrWord[] | undefined;
+  // Width reserved to the right of the page for margin notes; 0 hides them.
+  marginWidth: number;
   onHighlightColorChange: (id: string, color: HighlightColor) => void;
+  // Resolves false if the save failed, so the editor can stay open.
+  onHighlightCommentChange: (
+    id: string,
+    comment: string | null,
+  ) => Promise<boolean>;
   onHighlightDelete: (id: string) => void;
 }) {
   const pageRef = useRef<HTMLDivElement>(null);
@@ -91,12 +102,18 @@ export function PdfPage({
   const [rects, setRects] = useState<Record<string, Rect[]>>({});
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Open highlight menu: which highlight, and where it was clicked (as
-  // fractions of the page, so it stays put across a zoom).
-  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(
-    null,
-  );
+  // Open highlight menu: which highlight, where it was clicked (as
+  // fractions of the page, so it stays put across a zoom), and whether it's
+  // showing the comment editor instead of the color/remove row.
+  const [menu, setMenu] = useState<{
+    id: string;
+    x: number;
+    y: number;
+    editing: boolean;
+  } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [draft, setDraft] = useState("");
+  const [savingComment, setSavingComment] = useState(false);
 
   useEffect(() => {
     if (!menu) return;
@@ -259,130 +276,257 @@ export function PdfPage({
       id,
       x: (e.clientX - box.left) / box.width,
       y: (e.clientY - box.top) / box.height,
+      editing: false,
     });
   };
 
+  /** Opens the comment editor just below the end of a highlight. */
+  const openCommentEditor = (id: string) => {
+    const highlight = highlights.find((h) => h.id === id);
+    const last = rects[id]?.at(-1);
+    if (!highlight || !last) return;
+    setDraft(highlight.comment ?? "");
+    setMenu({ id, x: last.x + last.w / 2, y: last.y + last.h, editing: true });
+  };
+
+  const saveComment = async (id: string, comment: string | null) => {
+    setSavingComment(true);
+    const saved = await onHighlightCommentChange(id, comment);
+    setSavingComment(false);
+    if (saved) setMenu(null);
+  };
+
+  const marginNotes = useMemo(
+    (): MarginNote[] =>
+      highlights.flatMap((h) => {
+        const top = rects[h.id]?.[0];
+        return h.comment && top
+          ? [{ highlightId: h.id, comment: h.comment, color: h.color, y: top.y }]
+          : [];
+      }),
+    [highlights, rects],
+  );
+
   return (
     <div
-      ref={pageRef}
-      data-page-number={pageNumber}
-      onClick={handleClick}
-      onMouseMove={(e) =>
-        setHoverId(
-          menuRef.current?.contains(e.target as Node) ? null : highlightAt(e),
-        )
-      }
-      onMouseLeave={() => setHoverId(null)}
-      title={hoverId ? "Click to change or remove highlight" : undefined}
-      className="relative mx-auto bg-white shadow-md"
-      style={{ width, height, cursor: hoverId ? "pointer" : undefined }}
+      className="relative mx-auto shrink-0"
+      style={{ width: width + marginWidth }}
     >
-      {visible && (
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0"
-          style={{ width, height }}
-        />
-      )}
-
       <div
-        className="pointer-events-none absolute inset-0 z-[1]"
-        style={{ mixBlendMode: "multiply" }}
+        ref={pageRef}
+        data-page-number={pageNumber}
+        onClick={handleClick}
+        onMouseMove={(e) =>
+          setHoverId(
+            menuRef.current?.contains(e.target as Node) ? null : highlightAt(e),
+          )
+        }
+        onMouseLeave={() => setHoverId(null)}
+        title={
+          hoverId ? "Click to comment on, recolor, or remove highlight" : undefined
+        }
+        className="relative bg-white shadow-md"
+        style={{ width, height, cursor: hoverId ? "pointer" : undefined }}
       >
-        {highlights.flatMap((h) =>
-          (rects[h.id] ?? []).map((r, i) => (
-            <div
-              key={`${h.id}-${i}`}
-              className="absolute rounded-[2px]"
-              style={{
-                left: `${r.x * 100}%`,
-                top: `${r.y * 100}%`,
-                width: `${r.w * 100}%`,
-                height: `${r.h * 100}%`,
-                backgroundColor:
-                  HIGHLIGHT_COLOR_STYLES[h.color as HighlightColor] ??
-                  HIGHLIGHT_COLOR_STYLES.yellow,
-                outline:
-                  hoverId === h.id || menu?.id === h.id
-                    ? "1px solid rgba(0, 0, 0, 0.35)"
-                    : "none",
-              }}
-            />
-          )),
+        {visible && (
+          <canvas
+            ref={canvasRef}
+            className="absolute inset-0"
+            style={{ width, height }}
+          />
         )}
-      </div>
 
-      {visible && ocrWords ? (
-        <div ref={textLayerRef} className="textLayer ocrLayer">
-          {ocrWords.map((word, i) => {
-            const fontSize = word.h * height;
-            const measured = measureTextWidth(word.text, fontSize);
-            const scaleX = measured > 0 ? (word.w * width) / measured : 1;
+        <div
+          className="pointer-events-none absolute inset-0 z-[1]"
+          style={{ mixBlendMode: "multiply" }}
+        >
+          {highlights.flatMap((h) =>
+            (rects[h.id] ?? []).map((r, i) => (
+              <div
+                key={`${h.id}-${i}`}
+                className="absolute rounded-[2px]"
+                style={{
+                  left: `${r.x * 100}%`,
+                  top: `${r.y * 100}%`,
+                  width: `${r.w * 100}%`,
+                  height: `${r.h * 100}%`,
+                  backgroundColor:
+                    HIGHLIGHT_COLOR_STYLES[h.color as HighlightColor] ??
+                    HIGHLIGHT_COLOR_STYLES.yellow,
+                  outline:
+                    hoverId === h.id || menu?.id === h.id
+                      ? "1px solid rgba(0, 0, 0, 0.35)"
+                      : "none",
+                }}
+              />
+            )),
+          )}
+        </div>
+
+        {/* Marks highlights that carry a comment — the only sign of one when
+            the margin is hidden on narrow screens. */}
+        <div className="pointer-events-none absolute inset-0 z-[2]">
+          {highlights.map((h) => {
+            const first = rects[h.id]?.[0];
+            if (!h.comment || !first) return null;
             return (
               <span
-                key={i}
+                key={h.id}
+                className="absolute flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-accent-fill text-white shadow-sm"
                 style={{
-                  left: word.x * width,
-                  top: word.y * height,
-                  fontSize,
-                  transform: `scaleX(${scaleX})`,
+                  left: `${(first.x + first.w) * 100}%`,
+                  top: `${first.y * 100}%`,
                 }}
               >
-                {i < ocrWords.length - 1 ? `${word.text} ` : word.text}
+                <ChatIcon className="h-2.5 w-2.5" />
               </span>
             );
           })}
         </div>
-      ) : (
-        visible && <div ref={textLayerRef} className="textLayer" />
-      )}
 
-      {menu && menuHighlight && (
-        <div
-          ref={menuRef}
-          role="menu"
-          aria-label="Highlight options"
-          className="absolute z-[3] flex -translate-x-1/2 translate-y-2 items-center gap-1.5 rounded-lg border border-border bg-background p-1.5 shadow-lg"
-          style={{ left: `${menu.x * 100}%`, top: `${menu.y * 100}%` }}
-        >
-          {HIGHLIGHT_COLORS.map((c) => (
-            <button
-              key={c}
-              role="menuitemradio"
-              aria-checked={menuHighlight.color === c}
-              aria-label={`Change highlight to ${c}`}
-              onClick={() => {
-                if (menuHighlight.color !== c) {
-                  onHighlightColorChange(menuHighlight.id, c);
+        {visible && ocrWords ? (
+          <div ref={textLayerRef} className="textLayer ocrLayer">
+            {ocrWords.map((word, i) => {
+              const fontSize = word.h * height;
+              const measured = measureTextWidth(word.text, fontSize);
+              const scaleX = measured > 0 ? (word.w * width) / measured : 1;
+              return (
+                <span
+                  key={i}
+                  style={{
+                    left: word.x * width,
+                    top: word.y * height,
+                    fontSize,
+                    transform: `scaleX(${scaleX})`,
+                  }}
+                >
+                  {i < ocrWords.length - 1 ? `${word.text} ` : word.text}
+                </span>
+              );
+            })}
+          </div>
+        ) : (
+          visible && <div ref={textLayerRef} className="textLayer" />
+        )}
+
+        {menu && menuHighlight && menu.editing && (
+          <div
+            ref={menuRef}
+            role="dialog"
+            aria-label="Highlight comment"
+            data-no-highlight
+            className="absolute z-[3] flex w-72 -translate-x-1/2 translate-y-2 flex-col gap-2 rounded-lg border border-border bg-background p-2 shadow-lg"
+            style={{ left: `${menu.x * 100}%`, top: `${menu.y * 100}%` }}
+          >
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void saveComment(menuHighlight.id, draft);
                 }
+              }}
+              rows={4}
+              placeholder="Write a note — markdown works"
+              aria-label="Comment"
+              className="resize-y rounded-md border border-border bg-background p-2 text-sm text-foreground"
+            />
+            <div className="flex items-center gap-2">
+              {menuHighlight.comment && (
+                <button
+                  onClick={() => void saveComment(menuHighlight.id, null)}
+                  disabled={savingComment}
+                  className="rounded-md px-2 py-1 text-sm text-error hover:bg-surface disabled:opacity-50"
+                >
+                  Delete comment
+                </button>
+              )}
+              <span className="flex-1" />
+              <button
+                onClick={() => setMenu(null)}
+                className="rounded-md px-2 py-1 text-sm hover:bg-surface"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void saveComment(menuHighlight.id, draft)}
+                disabled={savingComment}
+                className="rounded-md bg-accent-fill px-3 py-1 text-sm text-white disabled:opacity-50"
+              >
+                {savingComment ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {menu && menuHighlight && !menu.editing && (
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label="Highlight options"
+            data-no-highlight
+            className="absolute z-[3] flex -translate-x-1/2 translate-y-2 items-center gap-1.5 rounded-lg border border-border bg-background p-1.5 shadow-lg"
+            style={{ left: `${menu.x * 100}%`, top: `${menu.y * 100}%` }}
+          >
+            {HIGHLIGHT_COLORS.map((c) => (
+              <button
+                key={c}
+                role="menuitemradio"
+                aria-checked={menuHighlight.color === c}
+                aria-label={`Change highlight to ${c}`}
+                onClick={() => {
+                  if (menuHighlight.color !== c) {
+                    onHighlightColorChange(menuHighlight.id, c);
+                  }
+                  setMenu(null);
+                }}
+                className="h-6 w-6 rounded-full border-2"
+                style={{
+                  backgroundColor: HIGHLIGHT_COLOR_STYLES[c],
+                  borderColor:
+                    menuHighlight.color === c ? "currentColor" : "transparent",
+                }}
+              />
+            ))}
+            <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
+            <button
+              role="menuitem"
+              onClick={() => openCommentEditor(menuHighlight.id)}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-sm hover:bg-surface"
+            >
+              <ChatIcon className="h-4 w-4" />
+              {menuHighlight.comment ? "Edit comment" : "Comment"}
+            </button>
+            <button
+              role="menuitem"
+              onClick={() => {
+                onHighlightDelete(menuHighlight.id);
                 setMenu(null);
               }}
-              className="h-6 w-6 rounded-full border-2"
-              style={{
-                backgroundColor: HIGHLIGHT_COLOR_STYLES[c],
-                borderColor:
-                  menuHighlight.color === c ? "currentColor" : "transparent",
-              }}
-            />
-          ))}
-          <span className="mx-0.5 h-5 w-px bg-border" aria-hidden />
-          <button
-            role="menuitem"
-            onClick={() => {
-              onHighlightDelete(menuHighlight.id);
-              setMenu(null);
-            }}
-            className="rounded-md px-2 py-1 text-sm text-error hover:bg-surface"
-          >
-            Remove
-          </button>
-        </div>
-      )}
+              className="rounded-md px-2 py-1 text-sm text-error hover:bg-surface"
+            >
+              Remove
+            </button>
+          </div>
+        )}
 
-      {error && (
-        <p className="absolute inset-x-0 top-4 text-center text-sm text-error">
-          {error}
-        </p>
+        {error && (
+          <p className="absolute inset-x-0 top-4 text-center text-sm text-error">
+            {error}
+          </p>
+        )}
+      </div>
+
+      {marginWidth > 0 && marginNotes.length > 0 && (
+        <MarginNotes
+          notes={marginNotes}
+          pageHeight={height}
+          activeId={menu?.id ?? hoverId}
+          onOpen={openCommentEditor}
+          onHover={setHoverId}
+        />
       )}
     </div>
   );

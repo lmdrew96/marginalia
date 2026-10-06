@@ -25,6 +25,11 @@ const ZOOM_STEP = 1.25;
 // poster size.
 const MAX_FIT_SCALE = 1.5;
 const COLUMN_PADDING_PX = 32;
+// Room to the right of each page for margin notes (a 224px note column plus
+// a gap). Below this column width the margin is dropped so the page stays
+// readable; commented highlights still show their marker.
+const MARGIN_GUTTER_PX = 240;
+const MIN_COLUMN_FOR_MARGIN_PX = 640;
 
 export function DocumentReader({
   documentId,
@@ -54,7 +59,7 @@ export function DocumentReader({
   const [pageSizes, setPageSizes] = useState<PageSize[]>([]);
   // Pages whose PDF has no text at all — scans or flattened exports.
   const [textlessPages, setTextlessPages] = useState<number[] | null>(null);
-  const [fitScale, setFitScale] = useState(1);
+  const [columnWidth, setColumnWidth] = useState(0);
   const [zoom, setZoom] = useState<number | null>(null); // null = fit width
   const [color, setColor] = useState<HighlightColor>("yellow");
   const [highlights, setHighlights] = useState<Highlight[]>(initialHighlights);
@@ -73,6 +78,20 @@ export function DocumentReader({
   const [error, setError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
 
+  const showMargin =
+    columnWidth >= MIN_COLUMN_FOR_MARGIN_PX && highlights.some((h) => h.comment);
+  const marginWidth = showMargin ? MARGIN_GUTTER_PX : 0;
+  const widestPage = Math.max(0, ...pageSizes.map((s) => s.width));
+  const fitScale =
+    columnWidth > 0 && widestPage > 0
+      ? Math.min(
+          MAX_FIT_SCALE,
+          Math.max(
+            MIN_SCALE,
+            (columnWidth - COLUMN_PADDING_PX - marginWidth) / widestPage,
+          ),
+        )
+      : 1;
   const scale = zoom ?? fitScale;
 
   useEffect(() => {
@@ -123,17 +142,13 @@ export function DocumentReader({
 
   useEffect(() => {
     const column = columnRef.current;
-    if (!column || pageSizes.length === 0) return;
-    const widest = Math.max(...pageSizes.map((s) => s.width));
-    const observer = new ResizeObserver(() => {
-      const available = column.clientWidth - COLUMN_PADDING_PX;
-      setFitScale(
-        Math.min(MAX_FIT_SCALE, Math.max(MIN_SCALE, available / widest)),
-      );
-    });
+    if (!column) return;
+    const observer = new ResizeObserver(() =>
+      setColumnWidth(column.clientWidth),
+    );
     observer.observe(column);
     return () => observer.disconnect();
-  }, [pageSizes]);
+  }, []);
 
   const toolbarBottom = () =>
     toolbarRef.current?.getBoundingClientRect().bottom ?? 0;
@@ -189,7 +204,9 @@ export function DocumentReader({
     return map;
   }, [highlights]);
 
-  async function handleMouseUp() {
+  async function handleMouseUp(e: React.MouseEvent) {
+    // Selecting text in the comment editor isn't a highlight.
+    if ((e.target as Element).closest("[data-no-highlight]")) return;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed) return;
     const range = selection.getRangeAt(0);
@@ -269,6 +286,30 @@ export function DocumentReader({
       console.error(err);
       setColorOf(previous);
       setActionError("Couldn't change that highlight's color — try again.");
+    }
+  }
+
+  async function changeHighlightComment(
+    id: string,
+    comment: string | null,
+  ): Promise<boolean> {
+    setActionError(null);
+    try {
+      const res = await fetch(`/api/highlights/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment }),
+      });
+      if (!res.ok) throw new Error(`Saving comment failed (${res.status})`);
+      const updated: Highlight = await res.json();
+      setHighlights((prev) =>
+        prev.map((h) => (h.id === id ? { ...h, comment: updated.comment } : h)),
+      );
+      return true;
+    } catch (err) {
+      console.error(err);
+      setActionError("Couldn't save that comment — try again.");
+      return false;
     }
   }
 
@@ -464,7 +505,9 @@ export function DocumentReader({
                 scale={scale}
                 highlights={highlightsByPage.get(i + 1) ?? NO_HIGHLIGHTS}
                 ocrWords={ocrWords[i + 1]}
+                marginWidth={marginWidth}
                 onHighlightColorChange={changeHighlightColor}
+                onHighlightCommentChange={changeHighlightComment}
                 onHighlightDelete={deleteHighlight}
               />
             ))

@@ -34,6 +34,8 @@ export const highlights = pgTable("highlights", {
   pageEndOffset: integer("page_end_offset").notNull(),
   textContent: text("text_content").notNull(),
   color: text("color").notNull().default("yellow"),
+  // Margin note on the highlight (markdown). Null when there isn't one.
+  comment: text("comment"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
