@@ -78,6 +78,9 @@ export function DocumentReader({
   const [error, setError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  // The chat sidebar sticks just below the toolbar, which can wrap onto
+  // more lines on narrow windows.
+  const [toolbarHeight, setToolbarHeight] = useState(0);
 
   const showMargin =
     columnWidth >= MIN_COLUMN_FOR_MARGIN_PX && highlights.some((h) => h.comment);
@@ -172,6 +175,16 @@ export function DocumentReader({
     }
     return null;
   };
+
+  useEffect(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+    const observer = new ResizeObserver(() =>
+      setToolbarHeight(toolbar.offsetHeight),
+    );
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, []);
 
   // The page being read: whichever one sits a quarter of the way down the
   // reading area, so a sliver of the previous page under the toolbar
@@ -528,7 +541,9 @@ export function DocumentReader({
         <p className="pt-3 text-sm text-error">{ocrError ?? actionError}</p>
       )}
 
-      <div className="flex w-full flex-1 justify-center gap-4 overflow-hidden">
+      {/* overflow-x-clip, not overflow-hidden: hidden would make this the
+          scroll container and stop the chat sidebar from sticking. */}
+      <div className="flex w-full flex-1 justify-center gap-4 overflow-x-clip">
         <div
           ref={columnRef}
           onMouseUp={handleMouseUp}
@@ -564,6 +579,7 @@ export function DocumentReader({
           open={chatOpen}
           onClose={() => setChatOpen(false)}
           pageCount={pageSizes.length}
+          stickyTop={toolbarHeight}
           currentPage={currentPage}
           onJumpToPage={scrollToPage}
         />

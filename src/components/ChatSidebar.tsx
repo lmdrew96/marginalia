@@ -25,6 +25,7 @@ export function ChatSidebar({
   open,
   onClose,
   pageCount,
+  stickyTop,
   currentPage,
   onJumpToPage,
 }: {
@@ -35,6 +36,9 @@ export function ChatSidebar({
   onClose: () => void;
   // 0 until the PDF has loaded.
   pageCount: number;
+  // Height of the reader toolbar; the sidebar stays pinned just below it
+  // while the document scrolls.
+  stickyTop: number;
   // Sent with each message so Claude gets the pages around it.
   currentPage: number;
   onJumpToPage: (pageNumber: number) => void;
@@ -46,6 +50,7 @@ export function ChatSidebar({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const asideRef = useRef<HTMLElement>(null);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [quizLoading, setQuizLoading] = useState(false);
   const [quizSetup, setQuizSetup] = useState<QuizSetup | null>(null);
@@ -55,6 +60,32 @@ export function ChatSidebar({
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, open]);
+
+  // Fill exactly the visible space from the sidebar's top to the bottom of
+  // the window. At the top of a document the app header still sits above
+  // it, so a fixed viewport height would push the input off-screen.
+  useEffect(() => {
+    if (!open) return;
+    let frame = 0;
+    const fit = () => {
+      frame = 0;
+      const aside = asideRef.current;
+      if (!aside) return;
+      const top = Math.max(stickyTop, aside.getBoundingClientRect().top);
+      aside.style.height = `${window.innerHeight - top}px`;
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(fit);
+    };
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [open, stickyTop]);
 
   async function send(text: string) {
     if (!text.trim() || sending) return;
@@ -151,7 +182,11 @@ export function ChatSidebar({
     : undefined;
 
   return (
-    <aside className="flex w-full max-w-sm flex-col border-l border-border">
+    <aside
+      ref={asideRef}
+      className="sticky flex w-full max-w-sm flex-col self-start border-l border-border bg-background"
+      style={{ top: stickyTop }}
+    >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-sm font-semibold">Ask about this reading</h2>
         <div className="flex items-center gap-3">
@@ -310,7 +345,9 @@ export function ChatSidebar({
       ) : (
         <>
           {highlights.length > 0 && (
-            <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3">
+            // Capped so a long highlight list can't push the messages and
+            // input out of the pinned sidebar.
+            <div className="flex max-h-48 shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-border px-4 py-3">
               <p className="text-xs font-medium text-secondary">
                 Highlights you&apos;ve made
               </p>
