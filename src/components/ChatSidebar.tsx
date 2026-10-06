@@ -336,12 +336,18 @@ export function ChatSidebar({
                   <div
                     key={m.id}
                     className={
+                      // max-w-full + min-w-0 keep wide code blocks and
+                      // tables scrolling inside the bubble.
                       m.role === "user"
-                        ? "self-end rounded-lg bg-foreground px-3 py-2 text-sm text-background"
-                        : "self-start rounded-lg bg-surface px-3 py-2 text-sm text-on-surface"
+                        ? "min-w-0 max-w-full self-end rounded-lg bg-foreground px-3 py-2 text-sm text-background"
+                        : "min-w-0 max-w-full self-start rounded-lg bg-surface px-3 py-2 text-sm text-on-surface"
                     }
                   >
-                    {m.content || (m.role === "assistant" && sending ? "…" : "")}
+                    {m.content ? (
+                      <Markdown>{m.content}</Markdown>
+                    ) : (
+                      m.role === "assistant" && sending && "…"
+                    )}
                   </div>
                 ))}
               </div>

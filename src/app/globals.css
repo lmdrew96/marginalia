@@ -209,6 +209,9 @@ body {
   border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent);
 }
 .markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
   border-collapse: collapse;
 }
 .markdown :is(th, td) {
