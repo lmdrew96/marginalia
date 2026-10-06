@@ -218,17 +218,7 @@ export async function convertPdfToHtml(
       stripHeaderFooter(lines, bodyHeight),
       bodyHeight,
     );
-    // A page with no text items but at least one image is almost certainly
-    // a scan or a flattened design export — mark it for the opt-in OCR pass
-    // (src/app/api/documents/[id]/ocr) so the reader can transcribe it later.
-    // This marker is the only place OCR eligibility is tracked — no separate
-    // DB column — so its exact shape is load-bearing for that route's regex.
-    const pageImages = imagesByPage[i];
-    const ocrEligible = paragraphs.length === 0 && pageImages.length > 0;
-    const images = pageImages.map(
-      (src) =>
-        `<img src="${src}" alt=""${ocrEligible ? ' data-ocr="pending"' : ""} />`,
-    );
+    const images = imagesByPage[i].map((src) => `<img src="${src}" alt="" />`);
     return [...paragraphs, ...images].join("\n");
   });
 

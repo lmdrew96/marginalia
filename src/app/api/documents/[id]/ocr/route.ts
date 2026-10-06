@@ -1,40 +1,35 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
-import { and, eq, gte } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { documents, highlights, bookmarks } from "@/db/schema";
+import { pageOcr } from "@/db/schema";
 import { getOwnedDocument } from "@/lib/documents";
-import { getObjectBuffer } from "@/lib/r2";
-import { mapWithConcurrency } from "@/lib/concurrency";
-import { sanitizeDocumentHtml } from "@/lib/sanitize";
-import { prepareImageForOcr, transcribePage } from "@/lib/ocr";
+import type { OcrWord } from "@/lib/highlight-types";
 
-export const runtime = "nodejs";
-export const maxDuration = 60;
+// OCR runs in the reader with tesseract.js (it needs word positions to build
+// a selectable text layer, which a vision model's transcription doesn't
+// give). This route only stores the result for one page.
 
-const OCR_CONCURRENCY = 4;
-// Bounds a single request's runtime so a timeout can only cost this many
-// Haiku calls — the button just re-runs for whatever's left (`remaining`).
-const MAX_PAGES_PER_REQUEST = 15;
+const MAX_WORDS_PER_PAGE = 20000;
 
-const PENDING_IMG_RE = /<img\b[^>]*\bdata-ocr="pending"[^>]*>/g;
-const SRC_ATTR_RE = /\bsrc="([^"]+)"/;
+function isFraction(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
+}
 
-// Offsets (highlights/bookmarks) are computed client-side by concatenating
-// DOM text node lengths in document order (src/lib/dom-offset.ts) — no
-// added whitespace, entities decoded. This mirrors that over the raw stored
-// HTML well enough to gate on: not an exact remap, just a safety threshold.
-function textOffsetBefore(html: string, index: number): number {
-  return html
-    .slice(0, index)
-    .replace(/<[^>]+>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&").length;
+function isOcrWord(w: unknown): w is OcrWord {
+  if (!w || typeof w !== "object") return false;
+  const { text, x, y, w: width, h } = w as Record<string, unknown>;
+  return (
+    typeof text === "string" &&
+    text.length > 0 &&
+    isFraction(x) &&
+    isFraction(y) &&
+    isFraction(width) &&
+    isFraction(h)
+  );
 }
 
 export async function POST(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { userId } = await auth();
@@ -48,80 +43,28 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const allMatches = [...doc.content.matchAll(PENDING_IMG_RE)];
-  if (allMatches.length === 0) {
+  const { pageNumber, words } = await req.json();
+  if (
+    !Number.isInteger(pageNumber) ||
+    pageNumber < 1 ||
+    !Array.isArray(words) ||
+    words.length > MAX_WORDS_PER_PAGE ||
+    !words.every(isOcrWord)
+  ) {
     return NextResponse.json(
-      { error: "No scanned pages to OCR" },
+      { error: "pageNumber and a valid words array are required" },
       { status: 400 },
     );
   }
 
-  // OCR only ever inserts text where none existed before, so a highlight or
-  // bookmark anchored before the first scanned page is unaffected. One at
-  // or after it would silently point at the wrong text once we insert —
-  // refuse rather than corrupt a saved highlight.
-  const cutoff = textOffsetBefore(doc.content, allMatches[0].index ?? 0);
-  const [riskyHighlight] = await db
-    .select({ id: highlights.id })
-    .from(highlights)
-    .where(and(eq(highlights.documentId, id), gte(highlights.startOffset, cutoff)))
-    .limit(1);
-  const [riskyBookmark] = await db
-    .select({ id: bookmarks.id })
-    .from(bookmarks)
-    .where(and(eq(bookmarks.documentId, id), gte(bookmarks.offset, cutoff)))
-    .limit(1);
-  if (riskyHighlight || riskyBookmark) {
-    return NextResponse.json(
-      {
-        error:
-          "Can't run OCR: there's a highlight or bookmark on or after a scanned page. Remove it first, then try again.",
-      },
-      { status: 409 },
-    );
-  }
+  const [saved] = await db
+    .insert(pageOcr)
+    .values({ documentId: id, pageNumber, words })
+    .onConflictDoUpdate({
+      target: [pageOcr.documentId, pageOcr.pageNumber],
+      set: { words },
+    })
+    .returning();
 
-  const batch = allMatches.slice(0, MAX_PAGES_PER_REQUEST);
-
-  const results = await mapWithConcurrency(batch, OCR_CONCURRENCY, async (match) => {
-    const tag = match[0];
-    const src = tag.match(SRC_ATTR_RE)?.[1];
-    if (!src || !src.startsWith(`/api/images/${userId}/`)) {
-      return { tag, ok: false as const };
-    }
-    const key = src.replace(/^\/api\/images\//, "");
-    try {
-      const buffer = await getObjectBuffer(key);
-      const image = await prepareImageForOcr(buffer);
-      const transcribed = await transcribePage(image);
-      if (!transcribed.ok) return { tag, ok: false as const };
-      const html = sanitizeDocumentHtml(transcribed.html);
-      return { tag, src, html, ok: true as const };
-    } catch (err) {
-      console.error(`OCR failed for ${key}:`, err);
-      return { tag, ok: false as const };
-    }
-  });
-
-  let content = doc.content;
-  let succeeded = 0;
-  for (const result of results) {
-    if (!result.ok) continue;
-    succeeded++;
-    const replacement = `<img src="${result.src}" alt="" data-ocr="done" />${result.html}`;
-    // Function replacer — a $&/$1-style sequence in the model's transcribed
-    // text (prices, code) would otherwise be interpreted as a replacement
-    // pattern by string-mode String.replace.
-    content = content.replace(result.tag, () => replacement);
-  }
-
-  if (succeeded > 0) {
-    await db.update(documents).set({ content }).where(eq(documents.id, id));
-  }
-
-  return NextResponse.json({
-    content,
-    ocred: succeeded,
-    remaining: allMatches.length - succeeded,
-  });
+  return NextResponse.json(saved, { status: 201 });
 }

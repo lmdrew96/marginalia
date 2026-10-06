@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { chatMessages, highlights } from "@/db/schema";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { chatMessages, highlights, pageOcr } from "@/db/schema";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { anthropic, CHAT_MODEL, DAILY_MESSAGE_LIMIT } from "@/lib/anthropic";
 import { stripHtmlToText } from "@/lib/sanitize";
@@ -77,7 +77,7 @@ export async function POST(
     );
   }
 
-  const [docHighlights, recentHistory] = await Promise.all([
+  const [docHighlights, recentHistory, ocrPages] = await Promise.all([
     db.select().from(highlights).where(eq(highlights.documentId, id)),
     db
       .select()
@@ -85,6 +85,11 @@ export async function POST(
       .where(eq(chatMessages.documentId, id))
       .orderBy(desc(chatMessages.createdAt))
       .limit(20),
+    db
+      .select()
+      .from(pageOcr)
+      .where(eq(pageOcr.documentId, id))
+      .orderBy(asc(pageOcr.pageNumber)),
   ]);
 
   await db
@@ -95,10 +100,19 @@ export async function POST(
     ? docHighlights.map((h) => `- "${h.textContent}"`).join("\n")
     : "(none)";
 
-  const contextText = stripHtmlToText(doc.content).slice(
-    0,
-    CONTEXT_CHAR_LIMIT,
-  );
+  // Scanned pages have no text in doc.content (it's built at upload, before
+  // OCR) — their OCR'd words are appended after the extracted text.
+  const ocrText = ocrPages
+    .filter((p) => p.words.length > 0)
+    .map(
+      (p) =>
+        `[Page ${p.pageNumber}, scanned]\n${p.words.map((w) => w.text).join(" ")}`,
+    )
+    .join("\n\n");
+  const contextText = [stripHtmlToText(doc.content), ocrText]
+    .filter(Boolean)
+    .join("\n\n")
+    .slice(0, CONTEXT_CHAR_LIMIT);
 
   const systemPrompt = `You are Marginalia's reading assistant, embedded in a sidebar next to the document the user is reading. Answer using the excerpt below as your primary context. Keep answers concise and conversational.
 

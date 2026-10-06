@@ -1,26 +1,30 @@
 function textWalker(root: Node): TreeWalker {
-  // No filter beyond SHOW_TEXT — this must descend into existing <mark>
-  // elements too, or offsets computed after the first highlight will be
-  // wrong for every highlight after it in that paragraph.
+  // Every text node under root, in document order — the same concatenation
+  // Range.toString() produces, so offsets from getOffsetInRoot line up.
   return document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 }
 
+/**
+ * Character offset of a DOM point within `root`'s text — the same count
+ * findRangeForOffsets walks. Uses a Range instead of matching text nodes so
+ * it also handles points on element nodes (a selection ending between two
+ * pdf.js text-layer spans lands on the layer div, not a text node). A point
+ * outside `root` clamps to its start or end.
+ */
 export function getOffsetInRoot(
   root: Node,
   target: Node,
   targetOffset: number,
 ): number {
-  const walker = textWalker(root);
-  let offset = 0;
-  let current = walker.nextNode();
-  while (current) {
-    if (current === target) {
-      return offset + targetOffset;
-    }
-    offset += current.textContent?.length ?? 0;
-    current = walker.nextNode();
+  const range = document.createRange();
+  range.selectNodeContents(root);
+  if (!root.contains(target)) {
+    const after =
+      root.compareDocumentPosition(target) & Node.DOCUMENT_POSITION_FOLLOWING;
+    return after ? range.toString().length : 0;
   }
-  return offset;
+  range.setEnd(target, targetOffset);
+  return range.toString().length;
 }
 
 export function findRangeForOffsets(
@@ -84,47 +88,4 @@ export function findRangeForOffsets(
   range.setStart(startNode, startNodeOffset);
   range.setEnd(endNode, endNodeOffset);
   return range;
-}
-
-export function wrapRangeInMark(
-  range: Range,
-  backgroundColor: string,
-  highlightId: string,
-): HTMLElement {
-  const mark = document.createElement("mark");
-  mark.style.backgroundColor = backgroundColor;
-  mark.style.color = "inherit";
-  mark.dataset.highlightId = highlightId;
-  const contents = range.extractContents();
-  mark.appendChild(contents);
-  range.insertNode(mark);
-  return mark;
-}
-
-export function unwrapMark(mark: HTMLElement): void {
-  const parent = mark.parentNode;
-  if (!parent) return;
-  while (mark.firstChild) {
-    parent.insertBefore(mark.firstChild, mark);
-  }
-  parent.removeChild(mark);
-  parent.normalize();
-}
-
-export function getTopVisibleOffset(root: Node): number | null {
-  const walker = textWalker(root);
-  let node = walker.nextNode() as Text | null;
-  while (node) {
-    const text = node.textContent ?? "";
-    if (text.trim().length > 0) {
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      const rect = range.getBoundingClientRect();
-      if (rect.bottom > 0) {
-        return getOffsetInRoot(root, node, 0);
-      }
-    }
-    node = walker.nextNode() as Text | null;
-  }
-  return null;
 }

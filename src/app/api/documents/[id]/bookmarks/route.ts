@@ -24,7 +24,7 @@ export async function GET(
     .select()
     .from(bookmarks)
     .where(eq(bookmarks.documentId, id))
-    .orderBy(asc(bookmarks.offset));
+    .orderBy(asc(bookmarks.pageNumber));
 
   return NextResponse.json(rows);
 }
@@ -44,10 +44,10 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { offset, label } = await req.json();
-  if (typeof offset !== "number") {
+  const { pageNumber, label } = await req.json();
+  if (!Number.isInteger(pageNumber) || pageNumber < 1) {
     return NextResponse.json(
-      { error: "offset is required" },
+      { error: "pageNumber is required" },
       { status: 400 },
     );
   }
@@ -56,7 +56,7 @@ export async function POST(
   await db.delete(bookmarks).where(eq(bookmarks.documentId, id));
   const [bookmark] = await db
     .insert(bookmarks)
-    .values({ documentId: id, offset, label })
+    .values({ documentId: id, pageNumber, label })
     .returning();
 
   return NextResponse.json(bookmark, { status: 201 });

@@ -88,14 +88,26 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Ported from pdfjs-dist/web/pdf_viewer.css (v6). pdf.js sizes and places
+   each span through these custom properties — without the --font-height /
+   --scale-x rules, spans render at the wrong size and selections drift off
+   the printed text. --total-scale-factor is set per page by the reader. */
 .textLayer {
+  position: absolute;
+  inset: 0;
   text-align: initial;
   overflow: clip;
+  opacity: 1;
   line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
   text-size-adjust: none;
   forced-color-adjust: none;
   transform-origin: 0 0;
-  z-index: 0;
+  z-index: 2;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
 }
 
 .textLayer span,
@@ -105,8 +117,33 @@ body {
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.textLayer > :not(.markedContent),
+.textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.textLayer .markedContent {
+  display: contents;
+}
+
+/* OCR words are positioned by the reader directly, not through pdf.js's
+   custom properties. */
+.textLayer.ocrLayer > span {
+  transform-origin: 0% 0%;
+  font-family: sans-serif;
+  line-height: 1;
 }
 
 .textLayer ::selection {
   background: var(--highlight);
+  color: transparent;
 }

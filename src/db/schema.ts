@@ -1,4 +1,13 @@
-import { pgTable, uuid, text, integer, timestamp } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  timestamp,
+  jsonb,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
+import type { OcrWord } from "@/lib/highlight-types";
 
 export const documents = pgTable("documents", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -17,8 +26,12 @@ export const highlights = pgTable("highlights", {
   documentId: uuid("document_id")
     .notNull()
     .references(() => documents.id, { onDelete: "cascade" }),
-  startOffset: integer("start_offset").notNull(),
-  endOffset: integer("end_offset").notNull(),
+  // Offsets count characters in that page's text layer (the concatenated
+  // pdf.js text items, or the OCR words for a scanned page) — not the whole
+  // document. See src/lib/dom-offset.ts.
+  pageNumber: integer("page_number").notNull(),
+  pageStartOffset: integer("page_start_offset").notNull(),
+  pageEndOffset: integer("page_end_offset").notNull(),
   textContent: text("text_content").notNull(),
   color: text("color").notNull().default("yellow"),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -31,12 +44,30 @@ export const bookmarks = pgTable("bookmarks", {
   documentId: uuid("document_id")
     .notNull()
     .references(() => documents.id, { onDelete: "cascade" }),
-  offset: integer("offset").notNull(),
+  pageNumber: integer("page_number").notNull(),
   label: text("label"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
+
+// Word boxes for scanned pages, produced in the browser by tesseract.js and
+// rendered as that page's text layer.
+export const pageOcr = pgTable(
+  "page_ocr",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    pageNumber: integer("page_number").notNull(),
+    words: jsonb("words").$type<OcrWord[]>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("page_ocr_document_page").on(t.documentId, t.pageNumber)],
+);
 
 export const chatMessages = pgTable("chat_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -57,5 +88,6 @@ export type Highlight = typeof highlights.$inferSelect;
 export type NewHighlight = typeof highlights.$inferInsert;
 export type Bookmark = typeof bookmarks.$inferSelect;
 export type NewBookmark = typeof bookmarks.$inferInsert;
+export type PageOcr = typeof pageOcr.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type NewChatMessage = typeof chatMessages.$inferInsert;
