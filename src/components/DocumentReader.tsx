@@ -77,6 +77,7 @@ export function DocumentReader({
   const [actionError, setActionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const showMargin =
     columnWidth >= MIN_COLUMN_FOR_MARGIN_PX && highlights.some((h) => h.comment);
@@ -171,6 +172,40 @@ export function DocumentReader({
     }
     return null;
   };
+
+  // The page being read: whichever one sits a quarter of the way down the
+  // reading area, so a sliver of the previous page under the toolbar
+  // doesn't count.
+  useEffect(() => {
+    if (pageSizes.length === 0) return;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const top = toolbarRef.current?.getBoundingClientRect().bottom ?? 0;
+      const probe = top + (window.innerHeight - top) * 0.25;
+      const pages =
+        columnRef.current?.querySelectorAll<HTMLElement>(
+          "[data-page-number]",
+        ) ?? [];
+      for (const el of pages) {
+        if (el.getBoundingClientRect().bottom > probe) {
+          setCurrentPage(Number(el.dataset.pageNumber));
+          return;
+        }
+      }
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    schedule();
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+    };
+  }, [pageSizes.length, scale]);
 
   const zoomTo = (next: number | null) => {
     const top = topVisiblePage();
@@ -394,6 +429,12 @@ export function DocumentReader({
         ref={toolbarRef}
         className="sticky top-0 z-10 flex w-full flex-wrap items-center justify-center gap-4 border-b border-border bg-background px-4 py-3"
       >
+        {pageSizes.length > 0 && (
+          <span className="text-sm tabular-nums text-secondary">
+            Page {currentPage} of {pageSizes.length}
+          </span>
+        )}
+
         <div className="flex items-center gap-1">
           <button
             onClick={() => zoomTo(scale / ZOOM_STEP)}
