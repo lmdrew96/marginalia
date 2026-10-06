@@ -348,9 +348,8 @@ export function DocumentReader({
     }
   }
 
-  function goToBookmark() {
-    if (!bookmark) return;
-    const el = pageElement(bookmark.pageNumber);
+  function scrollToPage(pageNumber: number) {
+    const el = pageElement(pageNumber);
     if (!el) return;
     window.scrollBy({
       top: el.getBoundingClientRect().top - toolbarBottom(),
@@ -446,7 +445,10 @@ export function DocumentReader({
 
         {bookmark && (
           <div className="flex items-stretch rounded-md border border-border">
-            <button onClick={goToBookmark} className="px-3 py-1.5">
+            <button
+              onClick={() => scrollToPage(bookmark.pageNumber)}
+              className="px-3 py-1.5"
+            >
               Go to bookmark (p. {bookmark.pageNumber})
             </button>
             <button
@@ -520,6 +522,7 @@ export function DocumentReader({
           initialMessages={initialChatMessages}
           open={chatOpen}
           onClose={() => setChatOpen(false)}
+          onJumpToHighlight={(h) => scrollToPage(h.pageNumber)}
         />
       </div>
     </div>

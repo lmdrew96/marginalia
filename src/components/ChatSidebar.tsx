@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, Highlight } from "@/db/schema";
 import { CloseIcon } from "@/components/icons";
+import { Markdown } from "@/components/Markdown";
+import type { QuizQuestion } from "@/app/api/documents/[id]/quiz/route";
+
+// A quiz lives only in this component — nothing about it is saved.
+type Quiz = { questions: QuizQuestion[]; index: number; revealed: boolean };
 
 type DisplayMessage = {
   id: string;
@@ -16,12 +21,14 @@ export function ChatSidebar({
   initialMessages,
   open,
   onClose,
+  onJumpToHighlight,
 }: {
   documentId: string;
   highlights: Highlight[];
   initialMessages: ChatMessage[];
   open: boolean;
   onClose: () => void;
+  onJumpToHighlight: (highlight: Highlight) => void;
 }) {
   const [messages, setMessages] = useState<DisplayMessage[]>(
     initialMessages.map((m) => ({ id: m.id, role: m.role as "user" | "assistant", content: m.content })),
@@ -30,6 +37,8 @@ export function ChatSidebar({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [quiz, setQuiz] = useState<Quiz | null>(null);
+  const [quizLoading, setQuizLoading] = useState(false);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -86,7 +95,29 @@ export function ChatSidebar({
     }
   }
 
+  async function startQuiz() {
+    setError(null);
+    setQuizLoading(true);
+    try {
+      const res = await fetch(`/api/documents/${documentId}/quiz`, {
+        method: "POST",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Couldn't build a quiz");
+      setQuiz({ questions: body.questions, index: 0, revealed: false });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't build a quiz");
+    } finally {
+      setQuizLoading(false);
+    }
+  }
+
   if (!open) return null;
+
+  const current = quiz?.questions[quiz.index];
+  const source = current
+    ? highlights.find((h) => h.id === current.highlightId)
+    : undefined;
 
   return (
     <aside className="flex w-full max-w-sm flex-col border-l border-border">
@@ -101,74 +132,143 @@ export function ChatSidebar({
         </button>
       </div>
 
-      {highlights.length > 0 && (
-        <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3">
-          <p className="text-xs font-medium text-secondary">
-            Highlights you&apos;ve made
-          </p>
-          {highlights.map((h) => (
+      {quiz && current ? (
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-secondary">
+              Question {quiz.index + 1} of {quiz.questions.length}
+            </p>
             <button
-              key={h.id}
-              onClick={() =>
-                send(`Can you explain this: "${h.textContent}"`)
-              }
-              disabled={sending}
-              className="group truncate rounded-md border border-border px-2 py-1 text-left text-xs text-secondary transition-colors hover:bg-surface disabled:opacity-50"
+              onClick={() => setQuiz(null)}
+              className="text-xs text-secondary hover:underline"
             >
-              <span className="group-hover:text-on-surface-secondary">
-                Ask about: “{h.textContent}”
-              </span>
+              End quiz
             </button>
-          ))}
-        </div>
-      )}
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
-        {messages.length === 0 ? (
-          <p className="text-sm text-secondary">
-            Ask a question about this reading.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                className={
-                  m.role === "user"
-                    ? "self-end rounded-lg bg-foreground px-3 py-2 text-sm text-background"
-                    : "self-start rounded-lg bg-surface px-3 py-2 text-sm text-on-surface"
-                }
-              >
-                {m.content || (m.role === "assistant" && sending ? "…" : "")}
-              </div>
-            ))}
           </div>
-        )}
-        {error && <p className="mt-2 text-xs text-error">{error}</p>}
-      </div>
+          <div className="rounded-lg bg-surface px-3 py-2 text-sm text-on-surface">
+            <Markdown>{current.question}</Markdown>
+          </div>
+          {quiz.revealed ? (
+            <>
+              <div className="rounded-lg border border-border px-3 py-2 text-sm">
+                <Markdown>{current.answer}</Markdown>
+              </div>
+              {source && (
+                <button
+                  onClick={() => onJumpToHighlight(source)}
+                  className="rounded-md border border-border px-2 py-1 text-left text-xs text-secondary hover:bg-surface hover:text-on-surface-secondary"
+                >
+                  From p. {source.pageNumber}: “{source.textContent}”
+                </button>
+              )}
+              {quiz.index < quiz.questions.length - 1 ? (
+                <button
+                  onClick={() =>
+                    setQuiz({ ...quiz, index: quiz.index + 1, revealed: false })
+                  }
+                  className="self-end rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+                >
+                  Next question
+                </button>
+              ) : (
+                <button
+                  onClick={() => setQuiz(null)}
+                  className="self-end rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+                >
+                  Done
+                </button>
+              )}
+            </>
+          ) : (
+            <button
+              onClick={() => setQuiz({ ...quiz, revealed: true })}
+              className="self-start rounded-md border border-border px-3 py-1.5 text-sm"
+            >
+              Show answer
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          {highlights.length > 0 && (
+            <div className="flex flex-col gap-1.5 border-b border-border px-4 py-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-medium text-secondary">
+                  Highlights you&apos;ve made
+                </p>
+                <button
+                  onClick={startQuiz}
+                  disabled={quizLoading || sending}
+                  className="rounded-md border border-border px-2 py-0.5 text-xs disabled:opacity-50"
+                >
+                  {quizLoading ? "Writing quiz…" : "Quiz me"}
+                </button>
+              </div>
+              {highlights.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() =>
+                    send(`Can you explain this: "${h.textContent}"`)
+                  }
+                  disabled={sending}
+                  className="group truncate rounded-md border border-border px-2 py-1 text-left text-xs text-secondary transition-colors hover:bg-surface disabled:opacity-50"
+                >
+                  <span className="group-hover:text-on-surface-secondary">
+                    Ask about: “{h.textContent}”
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          send(input);
-        }}
-        className="flex gap-2 border-t border-border p-3"
-      >
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about this reading…"
-          disabled={sending}
-          className="flex-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={sending || !input.trim()}
-          className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
-        >
-          Send
-        </button>
-      </form>
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
+            {messages.length === 0 ? (
+              <p className="text-sm text-secondary">
+                Ask a question about this reading.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={
+                      m.role === "user"
+                        ? "self-end rounded-lg bg-foreground px-3 py-2 text-sm text-background"
+                        : "self-start rounded-lg bg-surface px-3 py-2 text-sm text-on-surface"
+                    }
+                  >
+                    {m.content || (m.role === "assistant" && sending ? "…" : "")}
+                  </div>
+                ))}
+              </div>
+            )}
+            {error && <p className="mt-2 text-xs text-error">{error}</p>}
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+            className="flex gap-2 border-t border-border p-3"
+          >
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="Ask about this reading…"
+              disabled={sending}
+              className="flex-1 rounded-md border border-border bg-transparent px-3 py-1.5 text-sm disabled:opacity-50"
+            />
+            <button
+              type="submit"
+              disabled={sending || !input.trim()}
+              className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
+            >
+              Send
+            </button>
+          </form>
+        </>
+      )}
     </aside>
   );
 }
