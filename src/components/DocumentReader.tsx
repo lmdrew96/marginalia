@@ -522,7 +522,8 @@ export function DocumentReader({
           initialMessages={initialChatMessages}
           open={chatOpen}
           onClose={() => setChatOpen(false)}
-          onJumpToHighlight={(h) => scrollToPage(h.pageNumber)}
+          pageCount={pageSizes.length}
+          onJumpToPage={scrollToPage}
         />
       </div>
     </div>

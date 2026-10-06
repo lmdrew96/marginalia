@@ -118,7 +118,13 @@ function linesToParagraphHtml(lines: Line[], bodyHeight: number): string[] {
   return paragraphs;
 }
 
-export async function convertPdfToHtml(buffer: Buffer): Promise<string> {
+type PdfDocument = Awaited<
+  ReturnType<
+    typeof import("pdfjs-dist/legacy/build/pdf.mjs")["getDocument"]
+  >["promise"]
+>;
+
+async function openPdf(buffer: Buffer): Promise<PdfDocument> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
   // Under Next's bundler (Turbopack/webpack), pdfjs's own relative import
@@ -135,33 +141,61 @@ export async function convertPdfToHtml(buffer: Buffer): Promise<string> {
     "node_modules/pdfjs-dist/standard_fonts/",
   );
 
-  const tParse0 = performance.now();
-  const doc = await pdfjs.getDocument({
+  return pdfjs.getDocument({
     data: new Uint8Array(buffer),
     standardFontDataUrl,
   }).promise;
+}
+
+async function pageLines(doc: PdfDocument, pageNum: number): Promise<Line[]> {
+  const page = await doc.getPage(pageNum);
+  const textContent = await page.getTextContent();
+
+  const items: TextItem[] = textContent.items
+    .filter(
+      (item): item is Extract<typeof item, { transform: number[] }> =>
+        "transform" in item,
+    )
+    .map((item) => ({
+      str: item.str,
+      x: item.transform[4],
+      y: item.transform[5],
+      height: item.height || Math.abs(item.transform[3]) || 10,
+    }))
+    .filter((item) => item.str.trim().length > 0);
+
+  return groupIntoLines(items);
+}
+
+export type PageText = { pageNumber: number; text: string };
+
+/**
+ * Plain text of each page in `from`..`to` (1-based, inclusive; `to` is
+ * clamped to the last page). Scanned pages come back with empty text —
+ * their words live in page_ocr, not the PDF.
+ */
+export async function extractPdfPageTexts(
+  buffer: Buffer,
+  from: number,
+  to: number,
+): Promise<{ numPages: number; pages: PageText[] }> {
+  const doc = await openPdf(buffer);
+  const pages: PageText[] = [];
+  for (let n = Math.max(1, from); n <= Math.min(to, doc.numPages); n++) {
+    const lines = await pageLines(doc, n);
+    pages.push({ pageNumber: n, text: lines.map((l) => l.text).join("\n") });
+  }
+  return { numPages: doc.numPages, pages };
+}
+
+export async function convertPdfToHtml(buffer: Buffer): Promise<string> {
+  const tParse0 = performance.now();
+  const doc = await openPdf(buffer);
   const tParse1 = performance.now();
 
   const linesByPage: Line[][] = [];
-
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
-    const page = await doc.getPage(pageNum);
-    const textContent = await page.getTextContent();
-
-    const items: TextItem[] = textContent.items
-      .filter(
-        (item): item is Extract<typeof item, { transform: number[] }> =>
-          "transform" in item,
-      )
-      .map((item) => ({
-        str: item.str,
-        x: item.transform[4],
-        y: item.transform[5],
-        height: item.height || Math.abs(item.transform[3]) || 10,
-      }))
-      .filter((item) => item.str.trim().length > 0);
-
-    linesByPage.push(groupIntoLines(items));
+    linesByPage.push(await pageLines(doc, pageNum));
   }
   const tPages = performance.now();
 

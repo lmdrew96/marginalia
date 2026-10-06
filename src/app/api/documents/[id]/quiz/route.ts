@@ -1,17 +1,27 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
-import { highlights } from "@/db/schema";
-import { asc, eq } from "drizzle-orm";
+import { highlights, pageOcr } from "@/db/schema";
+import { and, asc, between, eq } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { anthropic, QUIZ_MODEL } from "@/lib/anthropic";
+import { getObjectBuffer } from "@/lib/r2";
+import { extractPdfPageTexts } from "@/lib/convert/pdf";
+
+export const runtime = "nodejs";
 
 export type QuizQuestion = {
   question: string;
   answer: string;
-  highlightId: string;
+  pageNumber: number;
+  // Set when the question was drawn from one of the reader's highlights.
+  highlightId: string | null;
 };
+
+// ~100k tokens of page text. Past this a quiz gets slow and costly, so the
+// reader is asked to pick a page range instead of the text being cut.
+const MAX_SOURCE_CHARS = 400_000;
 
 const QUIZ_SCHEMA = {
   type: "object",
@@ -23,12 +33,17 @@ const QUIZ_SCHEMA = {
         properties: {
           question: { type: "string" },
           answer: { type: "string" },
+          page: {
+            type: "integer",
+            description: "Page number the answer comes from",
+          },
           highlight: {
             type: "integer",
-            description: "Number of the highlight the question is drawn from",
+            description:
+              "Number of the highlight the question is drawn from, or 0 if it isn't drawn from a highlight",
           },
         },
-        required: ["question", "answer", "highlight"],
+        required: ["question", "answer", "page", "highlight"],
         additionalProperties: false,
       },
     },
@@ -37,10 +52,14 @@ const QUIZ_SCHEMA = {
   additionalProperties: false,
 };
 
-const SYSTEM_PROMPT = `You write review questions for a student from the passages they highlighted in a reading. Draw every question only from the numbered highlights (and the reader's own notes on them) — never from outside knowledge or parts of the reading they didn't highlight. Write between 5 and 10 questions; fewer only if the highlights are too thin to support more without repeating. Mix recall with "why/how" questions that check understanding. Keep each answer to a sentence or two, grounded in the highlight. Set "highlight" to the number of the highlight each question comes from. Markdown is fine in questions and answers.`;
+const SYSTEM_PROMPT = `You write review questions to help a student study a reading. You get the text of the pages they chose, and the passages they highlighted there (with any notes they wrote on them).
+
+Write between 5 and 10 questions covering the most important ideas in those pages. The highlights mark what the reader found important, so weight them heavily: when there are highlights, draw roughly half or more of the questions from them, and use the reader's notes to see what they were thinking about. Fill the rest from the key ideas elsewhere in the pages. Draw only from the given text, never outside knowledge.
+
+Mix recall with "why/how" questions that check understanding. Keep each answer to a sentence or two, grounded in the text. For each question set "page" to the page the answer comes from, and "highlight" to the number of the highlight it's drawn from (0 if none). Markdown is fine in questions and answers.`;
 
 export async function POST(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { userId } = await auth();
@@ -54,25 +73,109 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const docHighlights = await db
-    .select()
-    .from(highlights)
-    .where(eq(highlights.documentId, id))
-    .orderBy(asc(highlights.pageNumber), asc(highlights.pageStartOffset));
-  if (docHighlights.length === 0) {
+  // No range means the whole document.
+  const { fromPage, toPage } = await req.json().catch(() => ({}));
+  const hasRange = fromPage !== undefined || toPage !== undefined;
+  if (
+    hasRange &&
+    (!Number.isInteger(fromPage) ||
+      !Number.isInteger(toPage) ||
+      fromPage < 1 ||
+      toPage < fromPage)
+  ) {
     return NextResponse.json(
-      { error: "Highlight something first — the quiz is built from your highlights." },
+      { error: "fromPage and toPage must be page numbers, from ≤ to" },
+      { status: 400 },
+    );
+  }
+  const from: number = hasRange ? fromPage : 1;
+  const to: number = hasRange ? toPage : Number.MAX_SAFE_INTEGER;
+
+  let pages: { pageNumber: number; text: string }[];
+  let lastPage: number;
+  try {
+    const extracted = await extractPdfPageTexts(
+      await getObjectBuffer(doc.fileUrl),
+      from,
+      to,
+    );
+    pages = extracted.pages;
+    lastPage = Math.min(to, extracted.numPages);
+  } catch (err) {
+    console.error("Quiz page extraction failed:", err);
+    return NextResponse.json(
+      { error: "Couldn't read this document's pages." },
+      { status: 502 },
+    );
+  }
+
+  const [rangeHighlights, ocrRows] = await Promise.all([
+    db
+      .select()
+      .from(highlights)
+      .where(
+        and(
+          eq(highlights.documentId, id),
+          between(highlights.pageNumber, from, lastPage),
+        ),
+      )
+      .orderBy(asc(highlights.pageNumber), asc(highlights.pageStartOffset)),
+    db
+      .select()
+      .from(pageOcr)
+      .where(
+        and(
+          eq(pageOcr.documentId, id),
+          between(pageOcr.pageNumber, from, lastPage),
+        ),
+      ),
+  ]);
+
+  // Scanned pages have no PDF text; use their OCR'd words when they've been
+  // made selectable.
+  const ocrByPage = new Map(
+    ocrRows.map((p) => [p.pageNumber, p.words.map((w) => w.text).join(" ")]),
+  );
+  const pageBlocks = pages
+    .map((p) => ({
+      pageNumber: p.pageNumber,
+      text: p.text.trim() || ocrByPage.get(p.pageNumber) || "",
+    }))
+    .filter((p) => p.text)
+    .map((p) => `[Page ${p.pageNumber}]\n${p.text}`);
+
+  if (pageBlocks.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "There's no readable text on those pages. If they're scanned, make them selectable first.",
+      },
       { status: 400 },
     );
   }
 
-  const highlightList = docHighlights
-    .map(
-      (h, i) =>
-        `${i + 1}. (p. ${h.pageNumber}) "${h.textContent}"` +
-        (h.comment ? `\n   Reader's note: ${h.comment}` : ""),
-    )
-    .join("\n");
+  const pagesText = pageBlocks.join("\n\n");
+  if (pagesText.length > MAX_SOURCE_CHARS) {
+    return NextResponse.json(
+      {
+        error:
+          "That's too much text for one quiz — pick a smaller page range.",
+      },
+      { status: 413 },
+    );
+  }
+
+  const highlightList = rangeHighlights.length
+    ? rangeHighlights
+        .map(
+          (h, i) =>
+            `${i + 1}. (p. ${h.pageNumber}) "${h.textContent}"` +
+            (h.comment ? `\n   Reader's note: ${h.comment}` : ""),
+        )
+        .join("\n")
+    : "(none in these pages)";
+
+  const scope = hasRange ? `pages ${from}–${lastPage}` : "the whole document";
 
   let response: Anthropic.Message;
   try {
@@ -87,14 +190,13 @@ export async function POST(
       messages: [
         {
           role: "user",
-          content: `Reading: "${doc.title}"\n\nHighlights:\n${highlightList}`,
+          content: `Reading: "${doc.title}" (${scope})\n\n<pages>\n${pagesText}\n</pages>\n\nHighlights:\n${highlightList}`,
         },
       ],
     });
   } catch (err) {
     console.error("Quiz generation failed:", err);
-    const status =
-      err instanceof Anthropic.RateLimitError ? 429 : 502;
+    const status = err instanceof Anthropic.RateLimitError ? 429 : 502;
     return NextResponse.json(
       { error: "Couldn't build a quiz right now — try again in a moment." },
       { status },
@@ -104,7 +206,7 @@ export async function POST(
   if (response.stop_reason !== "end_turn") {
     console.error(`Quiz generation stopped early: ${response.stop_reason}`);
     return NextResponse.json(
-      { error: "Couldn't build a quiz from these highlights." },
+      { error: "Couldn't build a quiz from these pages." },
       { status: 502 },
     );
   }
@@ -117,15 +219,29 @@ export async function POST(
   let questions: QuizQuestion[];
   try {
     const parsed = JSON.parse(text) as {
-      questions: { question: string; answer: string; highlight: number }[];
+      questions: {
+        question: string;
+        answer: string;
+        page: number;
+        highlight: number;
+      }[];
     };
-    // Drop any question pointing at a highlight that doesn't exist, so
-    // every answer can link back to its source.
     questions = parsed.questions.flatMap((q) => {
-      const source = docHighlights[q.highlight - 1];
-      return source && q.question && q.answer
-        ? [{ question: q.question, answer: q.answer, highlightId: source.id }]
-        : [];
+      if (!q.question || !q.answer) return [];
+      const source = q.highlight > 0 ? rangeHighlights[q.highlight - 1] : null;
+      // Trust the highlight's own page over the model's; otherwise keep the
+      // page only if it's inside the quizzed range.
+      const pageNumber =
+        source?.pageNumber ??
+        (q.page >= from && q.page <= lastPage ? q.page : from);
+      return [
+        {
+          question: q.question,
+          answer: q.answer,
+          pageNumber,
+          highlightId: source?.id ?? null,
+        },
+      ];
     });
   } catch (err) {
     console.error("Quiz response wasn't valid JSON:", err);
@@ -134,7 +250,7 @@ export async function POST(
 
   if (questions.length === 0) {
     return NextResponse.json(
-      { error: "Couldn't build a quiz from these highlights." },
+      { error: "Couldn't build a quiz from these pages." },
       { status: 502 },
     );
   }
