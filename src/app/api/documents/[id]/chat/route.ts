@@ -11,6 +11,7 @@ import {
   MAX_CONTEXT_CHARS,
 } from "@/lib/page-text";
 import type { PageText } from "@/lib/convert/pdf";
+import { getClaudeInstructions, instructionsBlock } from "@/lib/settings";
 
 export const runtime = "nodejs";
 
@@ -142,7 +143,7 @@ export async function POST(
     );
   }
 
-  const [docHighlights, recentHistory] = await Promise.all([
+  const [docHighlights, recentHistory, instructions] = await Promise.all([
     db
       .select()
       .from(highlights)
@@ -154,6 +155,7 @@ export async function POST(
       .where(eq(chatMessages.documentId, id))
       .orderBy(desc(chatMessages.createdAt))
       .limit(20),
+    getClaudeInstructions(userId),
   ]);
 
   await db
@@ -216,6 +218,7 @@ ${highlightsBlock}`;
               text: documentPrompt,
               cache_control: { type: "ephemeral" },
             },
+            ...instructionsBlock(instructions),
             { type: "text", text: readerPrompt },
           ],
           messages: [

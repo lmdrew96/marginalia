@@ -45,6 +45,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 Marginalia
               </Link>
               <div className="flex items-center gap-3">
+                <Link
+                  href="/settings"
+                  className="text-sm text-secondary hover:underline"
+                >
+                  Settings
+                </Link>
                 <ThemeToggle />
                 <UserButton />
               </div>

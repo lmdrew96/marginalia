@@ -84,6 +84,16 @@ export const chatMessages = pgTable("chat_messages", {
     .defaultNow(),
 });
 
+// One row per user, created on first save.
+export const userSettings = pgTable("user_settings", {
+  userId: text("user_id").primaryKey(),
+  // Sent to Claude with chat and quiz requests. Empty means none.
+  claudeInstructions: text("claude_instructions").notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
 export type Highlight = typeof highlights.$inferSelect;

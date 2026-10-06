@@ -6,6 +6,7 @@ import { highlights } from "@/db/schema";
 import { and, asc, between, eq } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { anthropic, QUIZ_MODEL } from "@/lib/anthropic";
+import { getClaudeInstructions, instructionsBlock } from "@/lib/settings";
 import {
   formatPages,
   getDocumentPageTexts,
@@ -104,16 +105,19 @@ export async function POST(
   }
   const lastPage = pages.at(-1)?.pageNumber ?? from;
 
-  const rangeHighlights = await db
-    .select()
-    .from(highlights)
-    .where(
-      and(
-        eq(highlights.documentId, id),
-        between(highlights.pageNumber, from, lastPage),
-      ),
-    )
-    .orderBy(asc(highlights.pageNumber), asc(highlights.pageStartOffset));
+  const [rangeHighlights, instructions] = await Promise.all([
+    db
+      .select()
+      .from(highlights)
+      .where(
+        and(
+          eq(highlights.documentId, id),
+          between(highlights.pageNumber, from, lastPage),
+        ),
+      )
+      .orderBy(asc(highlights.pageNumber), asc(highlights.pageStartOffset)),
+    getClaudeInstructions(userId),
+  ]);
 
   const pagesText = formatPages(pages);
   if (!pagesText) {
@@ -157,7 +161,10 @@ export async function POST(
         effort: "medium",
         format: { type: "json_schema", schema: QUIZ_SCHEMA },
       },
-      system: SYSTEM_PROMPT,
+      system: [
+        { type: "text", text: SYSTEM_PROMPT },
+        ...instructionsBlock(instructions),
+      ],
       messages: [
         {
           role: "user",
