@@ -3,8 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { documents } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { getObjectBuffer, putObject } from "@/lib/r2";
-import { convertToHtml, detectFormat, type EncodedImage } from "@/lib/convert";
+import { getObjectBuffer } from "@/lib/r2";
+import { convertToHtml, detectFormat } from "@/lib/convert";
 import { sanitizeDocumentHtml } from "@/lib/sanitize";
 
 export const runtime = "nodejs";
@@ -46,18 +46,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  async function uploadImage(image: EncodedImage): Promise<string> {
-    const imageKey = `${userId}/images/${crypto.randomUUID()}.${image.ext}`;
-    await putObject(imageKey, image.buffer, image.contentType);
-    return `/api/images/${imageKey}`;
-  }
-
   let content: string;
   try {
     const t0 = performance.now();
     const buffer = await getObjectBuffer(key);
     const t1 = performance.now();
-    const html = await convertToHtml(buffer, format, uploadImage);
+    const html = await convertToHtml(buffer, format);
     const t2 = performance.now();
     content = sanitizeDocumentHtml(html);
     const t3 = performance.now();

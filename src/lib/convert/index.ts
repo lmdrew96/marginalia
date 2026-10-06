@@ -1,7 +1,4 @@
 import { convertPdfToHtml } from "./pdf";
-import type { EncodedImage } from "./pdf-images";
-
-export type { EncodedImage };
 export type SupportedFormat = "pdf";
 
 export function detectFormat(filename: string): SupportedFormat | null {
@@ -13,10 +10,9 @@ export function detectFormat(filename: string): SupportedFormat | null {
 export async function convertToHtml(
   buffer: Buffer,
   format: SupportedFormat,
-  uploadImage: (image: EncodedImage) => Promise<string>,
 ): Promise<string> {
   switch (format) {
     case "pdf":
-      return convertPdfToHtml(buffer, uploadImage);
+      return convertPdfToHtml(buffer);
   }
 }

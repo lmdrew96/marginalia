@@ -1,8 +1,4 @@
 import path from "node:path";
-import { decodePageImages, type EncodedImage } from "./pdf-images";
-import { mapWithConcurrency } from "@/lib/concurrency";
-
-const IMAGE_UPLOAD_CONCURRENCY = 6;
 
 type TextItem = {
   str: string;
@@ -122,10 +118,7 @@ function linesToParagraphHtml(lines: Line[], bodyHeight: number): string[] {
   return paragraphs;
 }
 
-export async function convertPdfToHtml(
-  buffer: Buffer,
-  uploadImage: (image: EncodedImage) => Promise<string>,
-): Promise<string> {
+export async function convertPdfToHtml(buffer: Buffer): Promise<string> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
   // Under Next's bundler (Turbopack/webpack), pdfjs's own relative import
@@ -150,7 +143,6 @@ export async function convertPdfToHtml(
   const tParse1 = performance.now();
 
   const linesByPage: Line[][] = [];
-  const imageBuffersByPage: EncodedImage[][] = [];
 
   for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
     const page = await doc.getPage(pageNum);
@@ -170,37 +162,12 @@ export async function convertPdfToHtml(
       .filter((item) => item.str.trim().length > 0);
 
     linesByPage.push(groupIntoLines(items));
-    imageBuffersByPage.push(await decodePageImages(page, pdfjs));
   }
   const tPages = performance.now();
 
-  // Decoding images is tied to each page's pdfjs state and stays
-  // sequential above, but uploading them is pure I/O with no such
-  // dependency — batch every image in the document into one concurrent
-  // upload pass instead of one page (or one image) at a time.
-  const flatBuffers = imageBuffersByPage.flatMap((images, pageIndex) =>
-    images.map((image) => ({ image, pageIndex })),
-  );
-  const uploaded = await mapWithConcurrency(
-    flatBuffers,
-    IMAGE_UPLOAD_CONCURRENCY,
-    async ({ image, pageIndex }) => {
-      try {
-        return { pageIndex, src: await uploadImage(image) };
-      } catch {
-        // A single failed image upload shouldn't fail the whole document.
-        return { pageIndex, src: null };
-      }
-    },
-  );
-  const imagesByPage: string[][] = imageBuffersByPage.map(() => []);
-  for (const { pageIndex, src } of uploaded) {
-    if (src) imagesByPage[pageIndex].push(src);
-  }
-  const tUpload = performance.now();
   console.log(
-    `[pdf-convert] pages=${doc.numPages} images=${flatBuffers.length}: ` +
-      `parse=${(tParse1 - tParse0).toFixed(0)}ms pageWalk=${(tPages - tParse1).toFixed(0)}ms imageUpload=${(tUpload - tPages).toFixed(0)}ms`,
+    `[pdf-convert] pages=${doc.numPages}: ` +
+      `parse=${(tParse1 - tParse0).toFixed(0)}ms pageWalk=${(tPages - tParse1).toFixed(0)}ms`,
   );
 
   const allLines = linesByPage.flat();
@@ -209,18 +176,14 @@ export async function convertPdfToHtml(
 
   // Paragraph breaks are computed per-page — y resets at each page boundary,
   // so a cross-page gap comparison is meaningless and can wrongly merge the
-  // bottom of one page with the top of the next. Images aren't positioned
-  // relative to text (pdfjs doesn't give us that without much more work),
-  // so they're placed after their page's text — a reasonable approximation
-  // for covers/figures, not pixel-accurate placement.
-  const pages = linesByPage.map((lines, i) => {
-    const paragraphs = linesToParagraphHtml(
-      stripHeaderFooter(lines, bodyHeight),
-      bodyHeight,
-    );
-    const images = imagesByPage[i].map((src) => `<img src="${src}" alt="" />`);
-    return [...paragraphs, ...images].join("\n");
-  });
+  // bottom of one page with the top of the next. Images aren't extracted:
+  // the reader renders the real page, so this HTML is only the text
+  // context for Ask Claude.
+  const pages = linesByPage.map((lines) =>
+    linesToParagraphHtml(stripHeaderFooter(lines, bodyHeight), bodyHeight).join(
+      "\n",
+    ),
+  );
 
   const html = pages.filter(Boolean).join("\n");
   return html || "<p></p>";
