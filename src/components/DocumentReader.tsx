@@ -564,6 +564,7 @@ export function DocumentReader({
           open={chatOpen}
           onClose={() => setChatOpen(false)}
           pageCount={pageSizes.length}
+          currentPage={currentPage}
           onJumpToPage={scrollToPage}
         />
       </div>

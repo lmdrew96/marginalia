@@ -2,12 +2,15 @@ import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
-import { highlights, pageOcr } from "@/db/schema";
+import { highlights } from "@/db/schema";
 import { and, asc, between, eq } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { anthropic, QUIZ_MODEL } from "@/lib/anthropic";
-import { getObjectBuffer } from "@/lib/r2";
-import { extractPdfPageTexts } from "@/lib/convert/pdf";
+import {
+  formatPages,
+  getDocumentPageTexts,
+  MAX_CONTEXT_CHARS,
+} from "@/lib/page-text";
 
 export const runtime = "nodejs";
 
@@ -18,10 +21,6 @@ export type QuizQuestion = {
   // Set when the question was drawn from one of the reader's highlights.
   highlightId: string | null;
 };
-
-// ~100k tokens of page text. Past this a quiz gets slow and costly, so the
-// reader is asked to pick a page range instead of the text being cut.
-const MAX_SOURCE_CHARS = 400_000;
 
 const QUIZ_SCHEMA = {
   type: "object",
@@ -92,15 +91,10 @@ export async function POST(
   const to: number = hasRange ? toPage : Number.MAX_SAFE_INTEGER;
 
   let pages: { pageNumber: number; text: string }[];
-  let lastPage: number;
   try {
-    const extracted = await extractPdfPageTexts(
-      await getObjectBuffer(doc.fileUrl),
-      from,
-      to,
+    pages = (await getDocumentPageTexts(doc)).filter(
+      (p) => p.pageNumber >= from && p.pageNumber <= to,
     );
-    pages = extracted.pages;
-    lastPage = Math.min(to, extracted.numPages);
   } catch (err) {
     console.error("Quiz page extraction failed:", err);
     return NextResponse.json(
@@ -108,43 +102,21 @@ export async function POST(
       { status: 502 },
     );
   }
+  const lastPage = pages.at(-1)?.pageNumber ?? from;
 
-  const [rangeHighlights, ocrRows] = await Promise.all([
-    db
-      .select()
-      .from(highlights)
-      .where(
-        and(
-          eq(highlights.documentId, id),
-          between(highlights.pageNumber, from, lastPage),
-        ),
-      )
-      .orderBy(asc(highlights.pageNumber), asc(highlights.pageStartOffset)),
-    db
-      .select()
-      .from(pageOcr)
-      .where(
-        and(
-          eq(pageOcr.documentId, id),
-          between(pageOcr.pageNumber, from, lastPage),
-        ),
+  const rangeHighlights = await db
+    .select()
+    .from(highlights)
+    .where(
+      and(
+        eq(highlights.documentId, id),
+        between(highlights.pageNumber, from, lastPage),
       ),
-  ]);
+    )
+    .orderBy(asc(highlights.pageNumber), asc(highlights.pageStartOffset));
 
-  // Scanned pages have no PDF text; use their OCR'd words when they've been
-  // made selectable.
-  const ocrByPage = new Map(
-    ocrRows.map((p) => [p.pageNumber, p.words.map((w) => w.text).join(" ")]),
-  );
-  const pageBlocks = pages
-    .map((p) => ({
-      pageNumber: p.pageNumber,
-      text: p.text.trim() || ocrByPage.get(p.pageNumber) || "",
-    }))
-    .filter((p) => p.text)
-    .map((p) => `[Page ${p.pageNumber}]\n${p.text}`);
-
-  if (pageBlocks.length === 0) {
+  const pagesText = formatPages(pages);
+  if (!pagesText) {
     return NextResponse.json(
       {
         error:
@@ -154,8 +126,7 @@ export async function POST(
     );
   }
 
-  const pagesText = pageBlocks.join("\n\n");
-  if (pagesText.length > MAX_SOURCE_CHARS) {
+  if (pagesText.length > MAX_CONTEXT_CHARS) {
     return NextResponse.json(
       {
         error:

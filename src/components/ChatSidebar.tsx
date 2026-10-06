@@ -25,6 +25,7 @@ export function ChatSidebar({
   open,
   onClose,
   pageCount,
+  currentPage,
   onJumpToPage,
 }: {
   documentId: string;
@@ -34,6 +35,8 @@ export function ChatSidebar({
   onClose: () => void;
   // 0 until the PDF has loaded.
   pageCount: number;
+  // Sent with each message so Claude gets the pages around it.
+  currentPage: number;
   onJumpToPage: (pageNumber: number) => void;
 }) {
   const [messages, setMessages] = useState<DisplayMessage[]>(
@@ -46,6 +49,8 @@ export function ChatSidebar({
   const [quiz, setQuiz] = useState<Quiz | null>(null);
   const [quizLoading, setQuizLoading] = useState(false);
   const [quizSetup, setQuizSetup] = useState<QuizSetup | null>(null);
+  // Which pages Claude could see on the last reply ("all" or "41-118").
+  const [contextPages, setContextPages] = useState<string | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -73,13 +78,14 @@ export function ChatSidebar({
       const res = await fetch(`/api/documents/${documentId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, currentPage }),
       });
 
       if (!res.ok || !res.body) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Chat request failed");
       }
+      setContextPages(res.headers.get("X-Context-Pages"));
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -354,6 +360,14 @@ export function ChatSidebar({
             )}
             {error && <p className="mt-2 text-xs text-error">{error}</p>}
           </div>
+
+          {contextPages && (
+            <p className="border-t border-border px-4 pt-2 text-xs text-secondary">
+              {contextPages === "all"
+                ? "Claude can see the whole document."
+                : `Claude can see pages ${contextPages.replace("-", "–")}. Scroll elsewhere and ask again to move that window.`}
+            </p>
+          )}
 
           <form
             onSubmit={(e) => {
