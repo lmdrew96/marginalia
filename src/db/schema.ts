@@ -6,6 +6,7 @@ import {
   timestamp,
   jsonb,
   uniqueIndex,
+  index,
 } from "drizzle-orm/pg-core";
 import type { OcrWord } from "@/lib/highlight-types";
 
@@ -83,6 +84,19 @@ export const chatMessages = pgTable("chat_messages", {
     .notNull()
     .defaultNow(),
 });
+
+// One row per quiz generated, counted against the daily limit.
+export const quizRequests = pgTable(
+  "quiz_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("quiz_requests_user_created").on(t.userId, t.createdAt)],
+);
 
 // One row per user, created on first save.
 export const userSettings = pgTable("user_settings", {

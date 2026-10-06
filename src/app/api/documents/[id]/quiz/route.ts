@@ -2,10 +2,10 @@ import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { db } from "@/db";
-import { highlights } from "@/db/schema";
-import { and, asc, between, eq } from "drizzle-orm";
+import { highlights, quizRequests } from "@/db/schema";
+import { and, asc, between, eq, gte, sql } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
-import { anthropic, QUIZ_MODEL } from "@/lib/anthropic";
+import { anthropic, DAILY_QUIZ_LIMIT, QUIZ_MODEL } from "@/lib/anthropic";
 import { getClaudeInstructions, instructionsBlock } from "@/lib/settings";
 import {
   formatPages,
@@ -151,6 +151,23 @@ export async function POST(
     : "(none in these pages)";
 
   const scope = hasRange ? `pages ${from}–${lastPage}` : "the whole document";
+
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(quizRequests)
+    .where(
+      and(eq(quizRequests.userId, userId), gte(quizRequests.createdAt, since)),
+    );
+  if (count >= DAILY_QUIZ_LIMIT) {
+    return NextResponse.json(
+      { error: "Daily quiz limit reached — try again tomorrow." },
+      { status: 429 },
+    );
+  }
+  // Counted once the request reaches Claude, whether or not it succeeds —
+  // the tokens are spent either way.
+  await db.insert(quizRequests).values({ userId });
 
   let response: Anthropic.Message;
   try {
