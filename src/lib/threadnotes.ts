@@ -90,21 +90,25 @@ export const getLibrary = async (
 ): Promise<ThreadNotesLibrary> =>
   (await call(apiKey, projectId ? { projectId } : {})) as ThreadNotesLibrary;
 
-/** Saves a highlight as an excerpt and returns the excerpt's id. */
+/**
+ * Saves a highlight as an excerpt and returns the excerpt's id. ThreadNotes
+ * matches on the quote, so `duplicate` means it handed back an existing
+ * excerpt and ignored the comment and page sent with it.
+ */
 export const createExcerpt = async (
   apiKey: string,
   projectId: string,
   excerpt: { quote: string; comment?: string; page: number; articleId: string },
-): Promise<string> => {
+): Promise<{ excerptId: string; duplicate: boolean }> => {
   const body = (await call(apiKey, { projectId }, {
     method: "POST",
     body: excerpt,
-  })) as { excerptId?: string; error?: string } | null;
+  })) as { excerptId?: string; duplicate?: boolean; error?: string } | null;
   // ThreadNotes answers 200 with an `error` (and an empty excerptId) when it
   // can't place the excerpt, e.g. the article isn't in that project.
   if (body?.error) throw new ThreadNotesError(body.error, 422);
   if (!body?.excerptId) throw new ThreadNotesError("ThreadNotes didn't return an excerpt id", 502);
-  return body.excerptId;
+  return { excerptId: body.excerptId, duplicate: body.duplicate === true };
 };
 
 export const updateExcerpt = async (
@@ -355,16 +359,26 @@ export const saveHighlightAsExcerpt = async (
       });
       return { highlight };
     }
-    const excerptId = await createExcerpt(apiKey, doc.threadnotesProjectId, {
+    const { excerptId, duplicate } = await createExcerpt(apiKey, doc.threadnotesProjectId, {
       quote: highlight.textContent,
       ...(highlight.comment && { comment: highlight.comment }),
       page: highlight.pageNumber,
       articleId: doc.threadnotesArticleId,
     });
+    // An existing excerpt (e.g. from an earlier attempt that saved but didn't
+    // link) keeps its old comment and page, so bring them up to date.
+    if (duplicate) {
+      await updateExcerpt(apiKey, excerptId, {
+        comment: highlight.comment ?? "",
+        page: highlight.pageNumber,
+      });
+    }
     // If the link can't be stored (or the highlight was deleted meanwhile),
     // take the excerpt back out so a retry can't leave a duplicate.
     const unlink = async (reason: unknown): Promise<void> => {
       console.error(`Linking excerpt ${excerptId} to highlight ${highlight.id} failed:`, reason);
+      // A duplicate was there before this attempt; it isn't ours to remove.
+      if (duplicate) return;
       await deleteExcerpt(apiKey, excerptId).catch((err) =>
         console.error(`Couldn't remove unlinked excerpt ${excerptId}:`, err),
       );
