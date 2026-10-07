@@ -27,6 +27,36 @@ export function getOffsetInRoot(
   return range.toString().length;
 }
 
+/**
+ * The text between `start` and `end` in `root`, reading each <br> as a line
+ * break. pdf.js ends every text-layer line with a <br> rather than a space,
+ * so plain textContent glues the last word of a line to the first word of
+ * the next. A line ending in a hyphen joins without a space ("cue-" +
+ * "associate"). Offsets are unaffected: they still count text nodes only.
+ */
+export function getTextBetweenOffsets(
+  root: Node,
+  start: number,
+  end: number,
+): string {
+  const range = findRangeForOffsets(root, start, end);
+  if (!range) return (root.textContent ?? "").slice(start, end);
+  const fragment = range.cloneContents();
+  const walker = document.createTreeWalker(
+    fragment,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+  );
+  let text = "";
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      text += node.textContent ?? "";
+    } else if (node.nodeName === "BR" && !/[-\s]$/.test(text)) {
+      text += " ";
+    }
+  }
+  return text;
+}
+
 export function findRangeForOffsets(
   root: Node,
   start: number,
