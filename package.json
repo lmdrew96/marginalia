@@ -1,15 +1,16 @@
 {
   "name": "marginalia",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "next:build": "next build",
+    "build": "opennextjs-cloudflare build",
     "start": "next start",
     "lint": "eslint",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "preview": "pnpm build && opennextjs-cloudflare preview",
+    "deploy": "pnpm build && opennextjs-cloudflare deploy",
+    "upload": "pnpm build && opennextjs-cloudflare upload",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "dependencies": {
