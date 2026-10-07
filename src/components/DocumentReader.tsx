@@ -330,8 +330,9 @@ export function DocumentReader({
         }),
       });
       if (!res.ok) throw new Error(`Saving highlight failed (${res.status})`);
-      const highlight: Highlight = await res.json();
+      const { threadnotesError, ...highlight }: SavedHighlight = await res.json();
       setHighlights((prev) => [...prev, highlight]);
+      if (threadnotesError) setActionError(threadnotesError);
     } catch (err) {
       console.error(err);
       setActionError("Couldn't save that highlight — try again.");
@@ -345,7 +346,13 @@ export function DocumentReader({
     setActionError(null);
     try {
       const res = await fetch(`/api/highlights/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`Deleting highlight failed (${res.status})`);
+      if (!res.ok) {
+        // e.g. it's also a ThreadNotes excerpt and ThreadNotes is disconnected.
+        const body = await res.json().catch(() => ({}));
+        console.error(`Deleting highlight failed (${res.status})`);
+        setHighlights((prev) => [...prev, removed]);
+        setActionError(body.error ?? "Couldn't remove that highlight — try again.");
+      }
     } catch (err) {
       console.error(err);
       setHighlights((prev) => [...prev, removed]);
@@ -388,10 +395,19 @@ export function DocumentReader({
         body: JSON.stringify({ comment }),
       });
       if (!res.ok) throw new Error(`Saving comment failed (${res.status})`);
-      const updated: Highlight = await res.json();
+      const { threadnotesError, ...updated }: SavedHighlight = await res.json();
       setHighlights((prev) =>
-        prev.map((h) => (h.id === id ? { ...h, comment: updated.comment } : h)),
+        prev.map((h) =>
+          h.id === id
+            ? {
+                ...h,
+                comment: updated.comment,
+                threadnotesExcerptId: updated.threadnotesExcerptId,
+              }
+            : h,
+        ),
       );
+      if (threadnotesError) setActionError(threadnotesError);
       return true;
     } catch (err) {
       console.error(err);
@@ -658,6 +674,10 @@ export function DocumentReader({
     </div>
   );
 }
+
+// A highlight as the API returns it after saving: on a ThreadNotes-linked
+// document, with the reason it didn't reach ThreadNotes if it didn't.
+type SavedHighlight = Highlight & { threadnotesError?: string };
 
 // Shared empty array so pages without highlights keep a stable prop and
 // don't re-measure on every highlight change elsewhere in the document.

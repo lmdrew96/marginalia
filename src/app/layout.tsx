@@ -4,7 +4,7 @@ import { Fraunces, Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider, Show, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { GearIcon, PenNibIcon } from "@/components/icons";
+import { BookOpenIcon, GearIcon, PenNibIcon } from "@/components/icons";
 import "./globals.css";
 
 const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('marginalia-theme')||'moss';var m=localStorage.getItem('marginalia-mode')||'dark';document.documentElement.setAttribute('data-theme',t);document.documentElement.setAttribute('data-mode',m);}catch(e){}})();`;
@@ -58,6 +58,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 Marginalia
               </Link>
               <div className="flex items-center gap-3">
+                <Link
+                  href="/threadnotes"
+                  className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm text-secondary transition-colors hover:bg-surface hover:text-on-surface"
+                >
+                  <BookOpenIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">Papers</span>
+                </Link>
                 <Link
                   href="/settings"
                   className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-sm text-secondary transition-colors hover:bg-surface hover:text-on-surface"

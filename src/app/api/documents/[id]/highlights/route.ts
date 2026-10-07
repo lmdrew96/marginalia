@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { highlights } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
+import { saveHighlightAsExcerpt } from "@/lib/threadnotes";
 
 export async function GET(
   _req: Request,
@@ -76,5 +77,9 @@ export async function POST(
     })
     .returning();
 
-  return NextResponse.json(highlight, { status: 201 });
+  const synced = await saveHighlightAsExcerpt(userId, doc, highlight);
+  return NextResponse.json(
+    { ...synced.highlight, threadnotesError: synced.threadnotesError },
+    { status: 201 },
+  );
 }
