@@ -25,6 +25,9 @@ type QuizQuestionBase = {
   highlightId: string | null;
 };
 
+export const QUIZ_LENGTHS = [5, 10, 20] as const;
+export type QuizLength = (typeof QUIZ_LENGTHS)[number];
+
 export type QuizQuestion =
   | (QuizQuestionBase & {
       kind: "multiple_choice";
@@ -84,7 +87,7 @@ const QUIZ_SCHEMA = {
 
 const SYSTEM_PROMPT = `You write review questions to help a student study a reading. You get the text of the pages they chose, and the passages they highlighted there (with any notes they wrote on them).
 
-Write between 5 and 10 questions covering the most important ideas in those pages. The highlights mark what the reader found important, so weight them heavily: when there are highlights, draw roughly half or more of the questions from them, and use the reader's notes to see what they were thinking about. Fill the rest from the key ideas elsewhere in the pages. Draw only from the given text, never outside knowledge.
+Write the number of questions the reader asks for, covering the most important ideas in those pages. If the pages don't hold enough distinct ideas for that many good questions, write fewer rather than padding with trivial or repetitive ones. The highlights mark what the reader found important, so weight them heavily: when there are highlights, draw roughly half or more of the questions from them, and use the reader's notes to see what they were thinking about. Fill the rest from the key ideas elsewhere in the pages. Draw only from the given text, never outside knowledge.
 
 Mix recall with "why/how" questions that check understanding, and mix two kinds of question, roughly half each:
 - "multiple_choice": four options in "choices", exactly one right, with "correct" set to its index. Make the wrong options plausible to someone who skimmed — not obviously silly — and keep all four similar in length. "answer" says in a sentence or two why the right option is right.
@@ -106,7 +109,17 @@ export async function POST(
   }
 
   // No range means the whole document.
-  const { fromPage, toPage } = await req.json().catch(() => ({}));
+  const {
+    fromPage,
+    toPage,
+    count: questionCount = 10,
+  } = await req.json().catch(() => ({}));
+  if (!QUIZ_LENGTHS.includes(questionCount)) {
+    return NextResponse.json(
+      { error: `count must be one of ${QUIZ_LENGTHS.join(", ")}` },
+      { status: 400 },
+    );
+  }
   const hasRange = fromPage !== undefined || toPage !== undefined;
   if (
     hasRange &&
@@ -217,7 +230,7 @@ export async function POST(
       messages: [
         {
           role: "user",
-          content: `Reading: "${doc.title}" (${scope})\n\n<pages>\n${pagesText}\n</pages>\n\nHighlights:\n${highlightList}`,
+          content: `Reading: "${doc.title}" (${scope})\nWrite ${questionCount} questions.\n\n<pages>\n${pagesText}\n</pages>\n\nHighlights:\n${highlightList}`,
         },
       ],
     });
@@ -305,7 +318,12 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({ questions });
+  // Never more than asked for; fewer is fine (thin pages, dropped
+  // malformed questions) and the client says so.
+  return NextResponse.json({
+    questions: questions.slice(0, questionCount),
+    requested: questionCount,
+  });
 }
 
 const shuffle = <T>(items: T[]): T[] => {

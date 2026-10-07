@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, Highlight } from "@/db/schema";
 import { CloseIcon } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
-import type { QuizQuestion } from "@/app/api/documents/[id]/quiz/route";
+import type {
+  QuizLength,
+  QuizQuestion,
+} from "@/app/api/documents/[id]/quiz/route";
 import type { Grade, GradeVerdict } from "@/app/api/documents/[id]/quiz/grade/route";
 
 // A quiz lives only in this component — nothing about it is saved.
@@ -13,6 +16,8 @@ import type { Grade, GradeVerdict } from "@/app/api/documents/[id]/quiz/grade/ro
 // All reset on each new question.
 type Quiz = {
   questions: QuizQuestion[];
+  // How many the reader asked for; Claude may write fewer on thin pages.
+  requested: number;
   index: number;
   revealed: boolean;
   picked: number | null;
@@ -28,7 +33,16 @@ const VERDICT_LABELS: Record<GradeVerdict, string> = {
 };
 // Page numbers stay strings while being typed, so a cleared field isn't
 // forced back to a number.
-type QuizSetup = { scope: "all" | "range"; from: string; to: string };
+type QuizSetup = {
+  scope: "all" | "range";
+  from: string;
+  to: string;
+  count: QuizLength;
+};
+
+// Mirrors QUIZ_LENGTHS in the quiz route (a value import would pull the
+// server route into the client bundle).
+const QUIZ_LENGTH_OPTIONS: QuizLength[] = [5, 10, 20];
 
 // Space left below the panel so it reads as a card, not a wall.
 const PANEL_GAP_PX = 16;
@@ -180,8 +194,8 @@ export function ChatSidebar({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           quizSetup.scope === "range"
-            ? { fromPage: setupFrom, toPage: setupTo }
-            : {},
+            ? { fromPage: setupFrom, toPage: setupTo, count: quizSetup.count }
+            : { count: quizSetup.count },
         ),
       });
       const body = await res.json().catch(() => ({}));
@@ -189,6 +203,7 @@ export function ChatSidebar({
       setQuizSetup(null);
       setQuiz({
         questions: body.questions,
+        requested: body.requested,
         index: 0,
         revealed: false,
         picked: null,
@@ -257,7 +272,14 @@ export function ChatSidebar({
             <button
               onClick={() =>
                 setQuizSetup((s) =>
-                  s ? null : { scope: "all", from: "1", to: String(pageCount) },
+                  s
+                    ? null
+                    : {
+                        scope: "all",
+                        from: "1",
+                        to: String(pageCount),
+                        count: 10,
+                      },
                 )
               }
               disabled={pageCount === 0 || quizLoading}
@@ -329,6 +351,31 @@ export function ChatSidebar({
               className="w-16 rounded-md border border-border bg-transparent px-2 py-0.5"
             />
           </label>
+          <div className="flex items-center gap-2">
+            <span className="text-secondary">Questions</span>
+            <div
+              role="radiogroup"
+              aria-label="Number of questions"
+              className="flex rounded-full border border-border p-0.5"
+            >
+              {QUIZ_LENGTH_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={quizSetup.count === n}
+                  onClick={() => setQuizSetup({ ...quizSetup, count: n })}
+                  className={`min-w-10 rounded-full px-2.5 py-0.5 tabular-nums transition-colors ${
+                    quizSetup.count === n
+                      ? "bg-foreground text-background"
+                      : "text-secondary hover:text-foreground"
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -352,9 +399,16 @@ export function ChatSidebar({
       {quiz && current ? (
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-medium text-secondary">
-              Question {quiz.index + 1} of {quiz.questions.length}
-            </p>
+            <div>
+              <p className="text-xs font-medium text-secondary">
+                Question {quiz.index + 1} of {quiz.questions.length}
+              </p>
+              {quiz.index === 0 && quiz.questions.length < quiz.requested && (
+                <p className="text-xs text-secondary">
+                  These pages only had enough for {quiz.questions.length}.
+                </p>
+              )}
+            </div>
             <button
               onClick={() => setQuiz(null)}
               className="text-xs text-secondary hover:underline"
