@@ -29,12 +29,13 @@ Marginalia runs on Cloudflare Workers through [OpenNext](https://opennext.js.org
 
 ### Environment
 
-Runtime secrets, set with `wrangler secret put <NAME>` or in the dashboard:
+Runtime values go in the Worker's Settings → Variables and secrets, as type **Secret**. A deploy keeps secrets but drops plain-text variables that aren't in `wrangler.jsonc`.
 
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (Clerk's middleware also reads it at runtime)
 - `DATABASE_URL`
 - `CLERK_SECRET_KEY`
 - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`
 - `ANTHROPIC_API_KEY`
 - `GOTENBERG_URL` (once Gotenberg is hosted)
 
-The `NEXT_PUBLIC_CLERK_*` values (publishable key, sign-in/up URLs, fallback redirects) are compiled into the client at build time, so they have to be build variables in Workers Builds. A Worker secret can't supply them. `THREADNOTES_URL` is optional and defaults to `https://research.adhdesigns.dev`.
+The `NEXT_PUBLIC_CLERK_*` values (publishable key, sign-in/up URLs, fallback redirects) are compiled into the client at build time, so they also have to be build variables in Workers Builds. The publishable key goes in both places. With it only at build time, every request fails with "Missing publishableKey". Clerk's keys must come from the same instance (`pk_live_…` with `sk_live_…`). `THREADNOTES_URL` is optional and defaults to `https://research.adhdesigns.dev`.
