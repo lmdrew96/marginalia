@@ -5,16 +5,26 @@ import type { ChatMessage, Highlight } from "@/db/schema";
 import { CloseIcon } from "@/components/icons";
 import { Markdown } from "@/components/Markdown";
 import type { QuizQuestion } from "@/app/api/documents/[id]/quiz/route";
+import type { Grade, GradeVerdict } from "@/app/api/documents/[id]/quiz/grade/route";
 
 // A quiz lives only in this component — nothing about it is saved.
 // `picked` is the chosen option on a multiple-choice question; `typed` is
-// the reader's short answer. Both reset on each new question.
+// the reader's short answer; `grade` is Claude's verdict on it, if asked.
+// All reset on each new question.
 type Quiz = {
   questions: QuizQuestion[];
   index: number;
   revealed: boolean;
   picked: number | null;
   typed: string;
+  grade: Grade | null;
+  grading: boolean;
+};
+
+const VERDICT_LABELS: Record<GradeVerdict, string> = {
+  correct: "✓ Got it",
+  partial: "◐ Partly",
+  incorrect: "✗ Missed it",
 };
 // Page numbers stay strings while being typed, so a cleared field isn't
 // forced back to a number.
@@ -183,12 +193,43 @@ export function ChatSidebar({
         revealed: false,
         picked: null,
         typed: "",
+        grade: null,
+        grading: false,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't build a quiz");
     } finally {
       setQuizLoading(false);
     }
+  }
+
+  async function gradeAnswer() {
+    const q = quiz?.questions[quiz.index];
+    if (!quiz || !q || !quiz.typed.trim() || quiz.grading) return;
+    const index = quiz.index;
+    setError(null);
+    setQuiz({ ...quiz, grading: true });
+    let grade: Grade | null = null;
+    try {
+      const res = await fetch(`/api/documents/${documentId}/quiz/grade`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: q.question,
+          modelAnswer: q.answer,
+          response: quiz.typed,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? "Couldn't grade that answer");
+      grade = body as Grade;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't grade that answer");
+    }
+    // Ignore a late reply if the reader has moved on to another question.
+    setQuiz((prev) =>
+      prev && prev.index === index ? { ...prev, grading: false, grade } : prev,
+    );
   }
 
   if (!open) return null;
@@ -417,6 +458,39 @@ export function ChatSidebar({
                 </p>
                 <Markdown>{current.answer}</Markdown>
               </div>
+              {current.kind === "short_answer" &&
+                quiz.typed.trim() &&
+                (quiz.grade ? (
+                  <div
+                    className={`fade-in rounded-lg border-2 px-3 py-2 text-sm ${
+                      quiz.grade.verdict === "correct"
+                        ? "border-accent-fill"
+                        : quiz.grade.verdict === "partial"
+                          ? "border-marker"
+                          : "border-error"
+                    }`}
+                  >
+                    <p
+                      className={`mb-1 text-xs font-semibold ${
+                        quiz.grade.verdict === "incorrect"
+                          ? "text-error"
+                          : "text-secondary"
+                      }`}
+                    >
+                      {VERDICT_LABELS[quiz.grade.verdict]}
+                    </p>
+                    <Markdown>{quiz.grade.feedback}</Markdown>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => void gradeAnswer()}
+                    disabled={quiz.grading}
+                    className="self-start rounded-full border border-border px-3 py-1.5 text-sm transition-colors hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                  >
+                    {quiz.grading ? "Grading…" : "Grade me"}
+                  </button>
+                ))}
+              {error && <p className="text-xs text-error">{error}</p>}
               <button
                 onClick={() => onJumpToPage(current.pageNumber)}
                 className="rounded-md border border-border px-2 py-1 text-left text-xs text-secondary hover:bg-surface hover:text-on-surface-secondary"
@@ -434,6 +508,8 @@ export function ChatSidebar({
                       revealed: false,
                       picked: null,
                       typed: "",
+                      grade: null,
+                      grading: false,
                     })
                   }
                   className="self-end rounded-full bg-foreground px-3 py-1.5 text-sm font-medium text-background"

@@ -102,6 +102,20 @@ export const quizRequests = pgTable(
   (t) => [index("quiz_requests_user_created").on(t.userId, t.createdAt)],
 );
 
+// One row per short answer Claude grades, counted against its own daily
+// limit (separate from quizzes: one quiz can hold several short answers).
+export const gradeRequests = pgTable(
+  "grade_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("grade_requests_user_created").on(t.userId, t.createdAt)],
+);
+
 // One row per user, created on first save.
 export const userSettings = pgTable("user_settings", {
   userId: text("user_id").primaryKey(),
