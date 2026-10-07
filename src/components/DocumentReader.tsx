@@ -330,8 +330,9 @@ export function DocumentReader({
         }),
       });
       if (!res.ok) throw new Error(`Saving highlight failed (${res.status})`);
-      const highlight: Highlight = await res.json();
+      const { threadnotesError, ...highlight }: SavedHighlight = await res.json();
       setHighlights((prev) => [...prev, highlight]);
+      if (threadnotesError) setActionError(threadnotesError);
     } catch (err) {
       console.error(err);
       setActionError("Couldn't save that highlight — try again.");
@@ -388,10 +389,19 @@ export function DocumentReader({
         body: JSON.stringify({ comment }),
       });
       if (!res.ok) throw new Error(`Saving comment failed (${res.status})`);
-      const updated: Highlight = await res.json();
+      const { threadnotesError, ...updated }: SavedHighlight = await res.json();
       setHighlights((prev) =>
-        prev.map((h) => (h.id === id ? { ...h, comment: updated.comment } : h)),
+        prev.map((h) =>
+          h.id === id
+            ? {
+                ...h,
+                comment: updated.comment,
+                threadnotesExcerptId: updated.threadnotesExcerptId,
+              }
+            : h,
+        ),
       );
+      if (threadnotesError) setActionError(threadnotesError);
       return true;
     } catch (err) {
       console.error(err);
@@ -658,6 +668,10 @@ export function DocumentReader({
     </div>
   );
 }
+
+// A highlight as the API returns it after saving: on a ThreadNotes-linked
+// document, with the reason it didn't reach ThreadNotes if it didn't.
+type SavedHighlight = Highlight & { threadnotesError?: string };
 
 // Shared empty array so pages without highlights keep a stable prop and
 // don't re-measure on every highlight change elsewhere in the document.

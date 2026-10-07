@@ -5,17 +5,22 @@ import { highlights } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { HIGHLIGHT_COLORS, type HighlightColor } from "@/lib/highlight-types";
+import {
+  deleteExcerpt,
+  getThreadNotesSettings,
+  saveHighlightAsExcerpt,
+} from "@/lib/threadnotes";
 
 const MAX_COMMENT_LENGTH = 10_000;
 
-const ownedHighlight =async (id: string, userId: string) => {
+const ownedHighlight = async (id: string, userId: string) => {
   const [highlight] = await db
     .select()
     .from(highlights)
     .where(eq(highlights.id, id));
   if (!highlight) return null;
   const doc = await getOwnedDocument(highlight.documentId, userId);
-  return doc ? highlight : null;
+  return doc ? { highlight, doc } : null;
 };
 
 export async function PATCH(
@@ -28,7 +33,8 @@ export async function PATCH(
   }
 
   const { id } = await params;
-  if (!(await ownedHighlight(id, userId))) {
+  const owned = await ownedHighlight(id, userId);
+  if (!owned) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -70,7 +76,14 @@ export async function PATCH(
     })
     .where(eq(highlights.id, id))
     .returning();
-  return NextResponse.json(updated);
+
+  // The note is the excerpt's comment; color stays in Marginalia.
+  if (comment === undefined) return NextResponse.json(updated);
+  const synced = await saveHighlightAsExcerpt(userId, owned.doc, updated);
+  return NextResponse.json({
+    ...synced.highlight,
+    threadnotesError: synced.threadnotesError,
+  });
 }
 
 export async function DELETE(
@@ -83,8 +96,28 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  if (!(await ownedHighlight(id, userId))) {
+  const owned = await ownedHighlight(id, userId);
+  if (!owned) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Remove the excerpt first, so a ThreadNotes failure leaves both in place
+  // to retry rather than an excerpt with no highlight. Without a saved key
+  // (ThreadNotes disconnected) there's nothing to reach; delete locally.
+  const excerptId = owned.highlight.threadnotesExcerptId;
+  if (excerptId) {
+    const { apiKey } = await getThreadNotesSettings(userId);
+    if (apiKey) {
+      try {
+        await deleteExcerpt(apiKey, excerptId);
+      } catch (err) {
+        console.error(`Deleting ThreadNotes excerpt ${excerptId} failed:`, err);
+        return NextResponse.json(
+          { error: "Couldn't remove it from ThreadNotes. Try again." },
+          { status: 502 },
+        );
+      }
+    }
   }
 
   await db.delete(highlights).where(eq(highlights.id, id));

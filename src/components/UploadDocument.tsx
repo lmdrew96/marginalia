@@ -5,7 +5,15 @@ import { useRef, useState } from "react";
 import { DOCX_MIME } from "@/lib/convert/docx";
 import { UploadIcon } from "@/components/icons";
 
-export function UploadDocument() {
+export function UploadDocument({
+  threadnotesArticleId,
+  label = "Upload a PDF or Word file",
+}: {
+  // Links the upload to this ThreadNotes paper (its title replaces the
+  // file name).
+  threadnotesArticleId?: string;
+  label?: string;
+} = {}) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<
@@ -44,7 +52,11 @@ export function UploadDocument() {
       const docRes = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: file.name.replace(/\.(pdf|docx)$/i, ""), key }),
+        body: JSON.stringify({
+          title: file.name.replace(/\.(pdf|docx)$/i, ""),
+          key,
+          threadnotesArticleId,
+        }),
       });
       if (!docRes.ok) throw new Error((await docRes.json()).error);
       const doc = await docRes.json();
@@ -82,7 +94,7 @@ export function UploadDocument() {
           ? "Uploading…"
           : status === "converting"
             ? "Converting…"
-            : "Upload a PDF or Word file"}
+            : label}
       </button>
       {status === "converting" && (
         <p className="fade-in text-xs text-secondary">

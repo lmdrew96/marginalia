@@ -8,23 +8,36 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type { OcrWord } from "@/lib/highlight-types";
 
-export const documents = pgTable("documents", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("user_id").notNull(),
-  title: text("title").notNull(),
-  fileUrl: text("file_url").notNull(),
-  format: text("format").notNull().default("pdf"),
-  content: text("content").notNull(),
-  uploadedAt: timestamp("uploaded_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  // Shown on library cards. Null for documents ingested before v0.16.0
-  // until the reader opens them once and reports it.
-  pageCount: integer("page_count"),
-  lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
-});
+export const documents = pgTable(
+  "documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull(),
+    title: text("title").notNull(),
+    fileUrl: text("file_url").notNull(),
+    format: text("format").notNull().default("pdf"),
+    content: text("content").notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    // Shown on library cards. Null for documents ingested before v0.16.0
+    // until the reader opens them once and reports it.
+    pageCount: integer("page_count"),
+    lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
+    // Set when the document was opened from a ThreadNotes article; its
+    // highlights are then saved to ThreadNotes as excerpts on that article.
+    threadnotesArticleId: text("threadnotes_article_id"),
+    threadnotesProjectId: text("threadnotes_project_id"),
+  },
+  (t) => [
+    uniqueIndex("documents_user_threadnotes_article")
+      .on(t.userId, t.threadnotesArticleId)
+      .where(sql`threadnotes_article_id IS NOT NULL`),
+  ],
+);
 
 export const highlights = pgTable("highlights", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -41,6 +54,9 @@ export const highlights = pgTable("highlights", {
   color: text("color").notNull().default("yellow"),
   // Margin note on the highlight (markdown). Null when there isn't one.
   comment: text("comment"),
+  // The ThreadNotes excerpt this highlight is saved as. Null when the
+  // document isn't from ThreadNotes, or saving it there failed.
+  threadnotesExcerptId: text("threadnotes_excerpt_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -121,6 +137,11 @@ export const userSettings = pgTable("user_settings", {
   userId: text("user_id").primaryKey(),
   // Sent to Claude with chat and quiz requests. Empty means none.
   claudeInstructions: text("claude_instructions").notNull().default(""),
+  // Used server-side only; never sent to the browser.
+  threadnotesApiKey: text("threadnotes_api_key"),
+  // The ThreadNotes project to read from, picked in Settings. Always sent,
+  // since ThreadNotes' default (its active project) changes under us.
+  threadnotesProjectId: text("threadnotes_project_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

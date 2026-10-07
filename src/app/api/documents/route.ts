@@ -6,12 +6,16 @@ import { eq, desc } from "drizzle-orm";
 import { deleteObject, getObjectBuffer, putObject } from "@/lib/r2";
 import {
   convertDocxToPdf,
-  convertToHtml,
   detectFormat,
   DocxConversionUnavailableError,
   isDocx,
 } from "@/lib/convert";
-import { sanitizeDocumentHtml } from "@/lib/sanitize";
+import { ingestDocument } from "@/lib/ingest";
+import {
+  markReading,
+  resolveArticle,
+  type ResolvedArticle,
+} from "@/lib/threadnotes";
 
 export const runtime = "nodejs";
 
@@ -36,7 +40,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { title, key } = await req.json();
+  // threadnotesArticleId: a manual upload of a ThreadNotes paper whose PDF
+  // couldn't be fetched. The document is linked to that article.
+  const { title, key, threadnotesArticleId } = await req.json();
   if (!title || !key) {
     return NextResponse.json(
       { error: "title and key are required" },
@@ -47,6 +53,21 @@ export async function POST(req: NextRequest) {
   // else is someone else's file.
   if (typeof key !== "string" || !key.startsWith(`${userId}/`)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  let threadnotes: Extract<ResolvedArticle, { ok: true }> | null = null;
+  if (threadnotesArticleId !== undefined) {
+    if (typeof threadnotesArticleId !== "string" || !threadnotesArticleId) {
+      return NextResponse.json(
+        { error: "threadnotesArticleId must be a string" },
+        { status: 400 },
+      );
+    }
+    const resolved = await resolveArticle(userId, threadnotesArticleId);
+    if (!resolved.ok) {
+      return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    }
+    threadnotes = resolved;
   }
 
   // Word files become PDFs here, so everything downstream only sees PDFs.
@@ -83,21 +104,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let content: string;
-  let pageCount: number;
   try {
-    const t0 = performance.now();
-    const buffer = await getObjectBuffer(fileKey);
-    const t1 = performance.now();
-    const converted = await convertToHtml(buffer, format);
-    pageCount = converted.pageCount;
-    const t2 = performance.now();
-    content = sanitizeDocumentHtml(converted.html);
-    const t3 = performance.now();
-    console.log(
-      `[ingest] ${fileKey} (${(buffer.length / 1024).toFixed(0)}KB): ` +
-        `fetch=${(t1 - t0).toFixed(0)}ms convert=${(t2 - t1).toFixed(0)}ms sanitize=${(t3 - t2).toFixed(0)}ms`,
-    );
+    const doc = await ingestDocument({
+      userId,
+      title: threadnotes ? threadnotes.article.title : title,
+      fileKey,
+      format,
+      threadnotes: threadnotes
+        ? { articleId: threadnotes.article.id, projectId: threadnotes.projectId }
+        : undefined,
+    });
+    if (threadnotes) await markReading(threadnotes.apiKey, threadnotes.article);
+    return NextResponse.json(doc, { status: 201 });
   } catch (err) {
     console.error("Document conversion failed:", err);
     return NextResponse.json(
@@ -105,11 +123,4 @@ export async function POST(req: NextRequest) {
       { status: 422 },
     );
   }
-
-  const [doc] = await db
-    .insert(documents)
-    .values({ userId, title, fileUrl: fileKey, format, content, pageCount })
-    .returning();
-
-  return NextResponse.json(doc, { status: 201 });
 }

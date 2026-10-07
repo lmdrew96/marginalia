@@ -68,7 +68,16 @@ export default async function ReadPage({
         <h1 className="max-w-[50vw] truncate text-center font-display text-lg font-semibold tracking-tight">
           {doc.title}
         </h1>
-        <span />
+        {doc.threadnotesArticleId ? (
+          <span
+            className="justify-self-end text-xs text-secondary"
+            title="Highlights and their notes are saved to ThreadNotes as excerpts on this paper."
+          >
+            Saving to ThreadNotes
+          </span>
+        ) : (
+          <span />
+        )}
       </header>
       <DocumentReader
         documentId={id}
