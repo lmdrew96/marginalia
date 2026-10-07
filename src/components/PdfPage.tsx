@@ -325,7 +325,7 @@ export function PdfPage({
         title={
           hoverId ? "Click to comment on, recolor, or remove highlight" : undefined
         }
-        className="relative bg-white shadow-md"
+        className="relative rounded-[3px] bg-white shadow-paper"
         style={{ width, height, cursor: hoverId ? "pointer" : undefined }}
       >
         {visible && (
@@ -344,8 +344,10 @@ export function PdfPage({
             (rects[h.id] ?? []).map((r, i) => (
               <div
                 key={`${h.id}-${i}`}
-                className="absolute rounded-[2px]"
+                className={`absolute rounded-[2px] ${isFresh(h) ? "marker-sweep" : ""}`}
                 style={{
+                  // Multi-line highlights sweep one line after another.
+                  animationDelay: `${i * 90}ms`,
                   left: `${r.x * 100}%`,
                   top: `${r.y * 100}%`,
                   width: `${r.w * 100}%`,
@@ -372,7 +374,7 @@ export function PdfPage({
             return (
               <span
                 key={h.id}
-                className="absolute flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-accent-fill text-white shadow-sm"
+                className="absolute flex h-4 w-4 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-accent-fill text-on-accent shadow-sm"
                 style={{
                   left: `${(first.x + first.w) * 100}%`,
                   top: `${first.y * 100}%`,
@@ -415,7 +417,7 @@ export function PdfPage({
             role="dialog"
             aria-label="Highlight comment"
             data-no-highlight
-            className="absolute z-[3] flex w-72 -translate-x-1/2 translate-y-2 flex-col gap-2 rounded-lg border border-border bg-background p-2 shadow-lg"
+            className="fade-in absolute z-[3] flex w-72 -translate-x-1/2 translate-y-2 flex-col gap-2 rounded-xl border border-border bg-background p-2 shadow-paper"
             style={{ left: `${menu.x * 100}%`, top: `${menu.y * 100}%` }}
           >
             <textarea
@@ -453,7 +455,7 @@ export function PdfPage({
               <button
                 onClick={() => void saveComment(menuHighlight.id, draft)}
                 disabled={savingComment}
-                className="rounded-md bg-accent-fill px-3 py-1 text-sm text-white disabled:opacity-50"
+                className="rounded-full bg-accent-fill px-3 py-1 text-sm text-on-accent disabled:opacity-50"
               >
                 {savingComment ? "Saving…" : "Save"}
               </button>
@@ -467,7 +469,7 @@ export function PdfPage({
             role="menu"
             aria-label="Highlight options"
             data-no-highlight
-            className="absolute z-[3] flex -translate-x-1/2 translate-y-2 items-center gap-1.5 rounded-lg border border-border bg-background p-1.5 shadow-lg"
+            className="fade-in absolute z-[3] flex -translate-x-1/2 translate-y-2 items-center gap-1.5 rounded-full border border-border bg-background p-1.5 shadow-paper"
             style={{ left: `${menu.x * 100}%`, top: `${menu.y * 100}%` }}
           >
             {HIGHLIGHT_COLORS.map((c) => (
@@ -531,3 +533,9 @@ export function PdfPage({
     </div>
   );
 }
+
+// A highlight made in the last few seconds gets the marker-sweep animation;
+// older ones (on load, or re-rendered by zoom) just appear.
+const FRESH_MS = 4000;
+const isFresh = (h: Highlight): boolean =>
+  Date.now() - new Date(h.createdAt).getTime() < FRESH_MS;

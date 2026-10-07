@@ -77,7 +77,7 @@ export const MarginNotes = ({
           onMouseEnter={() => onHover(note.highlightId)}
           onMouseLeave={() => onHover(null)}
           title="Edit comment"
-          className="absolute inset-x-0 max-h-48 cursor-pointer overflow-hidden rounded-md border-l-4 bg-surface px-3 py-2 text-left text-sm text-on-surface shadow-sm"
+          className="fade-in absolute inset-x-0 max-h-48 cursor-pointer overflow-hidden rounded-lg border-l-4 bg-surface px-3 py-2 text-left font-display text-[0.95rem] italic leading-snug text-on-surface shadow-sm transition-shadow hover:shadow-paper"
           style={{
             top: note.y * pageHeight,
             borderLeftColor:

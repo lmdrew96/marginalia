@@ -20,6 +20,9 @@ type Quiz = {
 // forced back to a number.
 type QuizSetup = { scope: "all" | "range"; from: string; to: string };
 
+// Space left below the panel so it reads as a card, not a wall.
+const PANEL_GAP_PX = 16;
+
 type DisplayMessage = {
   id: string;
   role: "user" | "assistant";
@@ -80,7 +83,7 @@ export function ChatSidebar({
       const aside = asideRef.current;
       if (!aside) return;
       const top = Math.max(stickyTop, aside.getBoundingClientRect().top);
-      aside.style.height = `${window.innerHeight - top}px`;
+      aside.style.height = `${window.innerHeight - top - PANEL_GAP_PX}px`;
     };
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(fit);
@@ -198,11 +201,16 @@ export function ChatSidebar({
   return (
     <aside
       ref={asideRef}
-      className="sticky flex w-full max-w-sm flex-col self-start border-l border-border bg-background"
+      className="fade-in sticky mr-4 flex w-full max-w-sm flex-col self-start overflow-hidden rounded-2xl border border-border bg-background shadow-paper"
       style={{ top: stickyTop }}
     >
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">Ask about this reading</h2>
+        <div>
+          <p className="eyebrow">Ask Claude</p>
+          <h2 className="font-display text-base font-semibold">
+            About this reading
+          </h2>
+        </div>
         <div className="flex items-center gap-3">
           {!quiz && (
             <button
@@ -213,7 +221,7 @@ export function ChatSidebar({
               }
               disabled={pageCount === 0 || quizLoading}
               aria-expanded={!!quizSetup}
-              className="rounded-md border border-border px-2 py-0.5 text-xs disabled:opacity-50"
+              className="rounded-full border border-border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-surface hover:text-on-surface disabled:opacity-50"
             >
               Quiz me
             </button>
@@ -292,7 +300,7 @@ export function ChatSidebar({
             <button
               type="submit"
               disabled={!setupValid || quizLoading}
-              className="rounded-md bg-foreground px-3 py-1 text-sm font-medium text-background disabled:opacity-50"
+              className="rounded-full bg-foreground px-3 py-1 text-sm font-medium text-background disabled:opacity-50"
             >
               {quizLoading ? "Writing quiz…" : "Start"}
             </button>
@@ -391,7 +399,7 @@ export function ChatSidebar({
                   <button
                     type="submit"
                     disabled={!quiz.typed.trim()}
-                    className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
+                    className="rounded-full bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
                   >
                     Check answer
                   </button>
@@ -428,14 +436,14 @@ export function ChatSidebar({
                       typed: "",
                     })
                   }
-                  className="self-end rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+                  className="self-end rounded-full bg-foreground px-3 py-1.5 text-sm font-medium text-background"
                 >
                   Next question
                 </button>
               ) : (
                 <button
                   onClick={() => setQuiz(null)}
-                  className="self-end rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
+                  className="self-end rounded-full bg-foreground px-3 py-1.5 text-sm font-medium text-background"
                 >
                   Done
                 </button>
@@ -524,7 +532,7 @@ export function ChatSidebar({
             <button
               type="submit"
               disabled={sending || !input.trim()}
-              className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
+              className="rounded-full bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
             >
               Send
             </button>

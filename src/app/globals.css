@@ -1,70 +1,94 @@
 @import "tailwindcss";
 
 /*
- * Two themes (Moss, Riga) x two modes (light, dark), selected via
- * [data-theme]/[data-mode] on <html>. Every text-role color below is
- * WCAG AA verified (>=4.5:1) against BOTH --background and --surface —
- * a plain --foreground-on-bg color doesn't reliably meet 4.5:1 on a
- * card/surface, so on-surface text gets its own --on-surface(-secondary)
- * tokens rather than reusing --foreground/--secondary there.
+ * "Annotated manuscript": two themes (Moss, Riga) x two modes, selected via
+ * [data-theme]/[data-mode] on <html>; Moss dark is the default. Every
+ * text-role color below is WCAG AA verified (>=4.5:1) against BOTH
+ * --background and --surface, and --on-accent against --accent-fill.
+ * --marker is the highlighter accent: fills only, never text.
  */
 
-:root {
-  color-scheme: light;
-
-  /* Moss — light (default theme) */
-  --background: #efead8;
-  --surface: #d0c8c0;
-  --border: #d0c8c0;
-  --foreground: #59695a;
-  --secondary: #47634b;
-  --on-surface: #4b584c;
-  --on-surface-secondary: #415b45;
-  --accent-fill: #6d9874;
-  --highlight: rgba(109, 152, 116, 0.25);
-  --error: #ce2121;
-}
-
+:root,
 [data-theme="moss"][data-mode="dark"] {
   color-scheme: dark;
-  --background: #5a603b;
-  --surface: #888658;
-  --border: #888658;
-  --foreground: #e9d4a0;
-  --secondary: #ffd282;
-  --on-surface: #231b08;
-  --on-surface-secondary: #291a00;
-  --accent-fill: #ab884f;
-  --highlight: rgba(255, 210, 130, 0.3);
-  --error: #f7cbcb;
+  --background: #161a14;
+  --surface: #232a20;
+  --border: #354031;
+  --foreground: #e6e1cf;
+  --secondary: #a8b598;
+  --on-surface: #e6e1cf;
+  --on-surface-secondary: #b4c0a4;
+  --accent: #d1ad55;
+  --accent-fill: #3e6a45;
+  --on-accent: #f3efe0;
+  --marker: rgba(209, 173, 85, 0.45);
+  --highlight: rgba(209, 173, 85, 0.3);
+  --error: #f0a196;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --grain-opacity: 0.05;
 }
 
-[data-theme="riga"][data-mode="light"] {
+[data-theme="moss"][data-mode="light"] {
   color-scheme: light;
-  --background: #eaebe6;
-  --surface: #a3c1d6;
-  --border: #a3c1d6;
-  --foreground: #575f66;
-  --secondary: #7a5f26;
-  --on-surface: #474d53;
-  --on-surface-secondary: #5e491d;
-  --accent-fill: #c4a858;
-  --highlight: rgba(196, 168, 88, 0.3);
-  --error: #cf2121;
+  --background: #f3efe3;
+  --surface: #e7e1ce;
+  --border: #d3cab0;
+  --foreground: #273024;
+  --secondary: #47603f;
+  --on-surface: #273024;
+  --on-surface-secondary: #405a39;
+  --accent: #855b10;
+  --accent-fill: #3c6543;
+  --on-accent: #f7f4ea;
+  --marker: rgba(214, 168, 58, 0.5);
+  --highlight: rgba(214, 168, 58, 0.3);
+  --error: #b3261e;
+  --shadow: 0 1px 2px rgba(60, 50, 20, 0.12), 0 8px 24px rgba(60, 50, 20, 0.12);
+  --grain-opacity: 0.07;
 }
 
 [data-theme="riga"][data-mode="dark"] {
   color-scheme: dark;
-  --background: #2c3639;
-  --surface: #3f4e4f;
-  --border: #3f4e4f;
-  --foreground: #dcd7c9;
-  --secondary: #d3a076;
-  --on-surface: #dcd7c9;
-  --on-surface-secondary: #dcb391;
-  --accent-fill: #a27b5b;
-  --highlight: rgba(211, 160, 118, 0.3);
-  --error: #ea7c7c;
+  --background: #121a2b;
+  --surface: #1c2740;
+  --border: #2d3c5c;
+  --foreground: #e6e3d8;
+  --secondary: #a9b6d3;
+  --on-surface: #e6e3d8;
+  --on-surface-secondary: #b7c3dd;
+  --accent: #e2b65c;
+  --accent-fill: #2e4d86;
+  --on-accent: #f4f1e6;
+  --marker: rgba(226, 182, 92, 0.45);
+  --highlight: rgba(226, 182, 92, 0.3);
+  --error: #f2a0a0;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --grain-opacity: 0.05;
+}
+
+[data-theme="riga"][data-mode="light"] {
+  color-scheme: light;
+  --background: #f2f0e9;
+  --surface: #e1e5eb;
+  --border: #c9d0dc;
+  --foreground: #1c2942;
+  --secondary: #3b4d71;
+  --on-surface: #1c2942;
+  --on-surface-secondary: #344566;
+  --accent: #835600;
+  --accent-fill: #24407a;
+  --on-accent: #f6f4ec;
+  --marker: rgba(226, 172, 60, 0.5);
+  --highlight: rgba(226, 172, 60, 0.3);
+  --error: #b42318;
+  --shadow: 0 1px 2px rgba(20, 30, 60, 0.12), 0 8px 24px rgba(20, 30, 60, 0.12);
+  --grain-opacity: 0.07;
+}
+
+:root {
+  /* Theme picker swatches — the same in every theme. */
+  --swatch-moss: #3e6a45;
+  --swatch-riga: #2e4d86;
 }
 
 @theme inline {
@@ -75,17 +99,74 @@
   --color-secondary: var(--secondary);
   --color-on-surface: var(--on-surface);
   --color-on-surface-secondary: var(--on-surface-secondary);
+  --color-accent: var(--accent);
   --color-accent-fill: var(--accent-fill);
+  --color-on-accent: var(--on-accent);
+  --color-marker: var(--marker);
   --color-highlight: var(--highlight);
   --color-error: var(--error);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fraunces);
+  --shadow-paper: var(--shadow);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Paper grain: fixed SVG noise behind everything (the body background
+   paints on the canvas below it), too faint to compete with text. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* Small spaced-caps label above titles ("YOUR LIBRARY"). */
+.eyebrow {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--secondary);
+}
+
+/* Default motion is a quick fade; a new highlight sweeps on like a marker
+   stroke. Both are dropped for reduced motion. */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes marker-sweep {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.fade-in {
+  animation: fade-in 150ms ease-out both;
+}
+.marker-sweep {
+  animation: marker-sweep 380ms cubic-bezier(0.3, 0.7, 0.4, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fade-in,
+  .marker-sweep {
+    animation: none;
+  }
+  * {
+    transition-duration: 0s !important;
+  }
 }
 
 /* Ported from pdfjs-dist/web/pdf_viewer.css (v6). pdf.js sizes and places

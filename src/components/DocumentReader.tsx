@@ -13,7 +13,13 @@ import { getOffsetInRoot } from "@/lib/dom-offset";
 import { ocrPages } from "@/lib/ocr";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { PdfPage } from "@/components/PdfPage";
-import { BookmarkIcon, ChatIcon, CloseIcon } from "@/components/icons";
+import {
+  BookmarkIcon,
+  ChatIcon,
+  CloseIcon,
+  MinusIcon,
+  PlusIcon,
+} from "@/components/icons";
 
 type PdfJs = typeof import("pdfjs-dist");
 type PageSize = { width: number; height: number };
@@ -38,6 +44,7 @@ export function DocumentReader({
   initialBookmarks,
   initialChatMessages,
   initialOcrPages,
+  reportPageCount,
 }: {
   documentId: string;
   fileUrl: string;
@@ -45,6 +52,9 @@ export function DocumentReader({
   initialBookmarks: Bookmark[];
   initialChatMessages: ChatMessage[];
   initialOcrPages: PageOcr[];
+  // True for documents stored before page counts were; the reader reports
+  // it once so the library card can show it.
+  reportPageCount: boolean;
 }) {
   const columnRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -121,6 +131,17 @@ export function DocumentReader({
       setPdfjs(lib);
       setPdf(doc);
       setPageSizes(sizes);
+      if (reportPageCount) {
+        fetch(`/api/documents/${documentId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pageCount: doc.numPages }),
+        })
+          .then((res) => {
+            if (!res.ok) throw new Error(`status ${res.status}`);
+          })
+          .catch((err) => console.error("Saving page count failed:", err));
+      }
 
       const textless: number[] = [];
       for (let n = 1; n <= doc.numPages; n++) {
@@ -142,7 +163,7 @@ export function DocumentReader({
         ?.destroy()
         .catch((err: unknown) => console.error("PDF cleanup failed:", err));
     };
-  }, [fileUrl]);
+  }, [fileUrl, documentId, reportPageCount]);
 
   useEffect(() => {
     const column = columnRef.current;
@@ -438,103 +459,120 @@ export function DocumentReader({
 
   return (
     <div className="flex flex-1 flex-col items-center">
+      {/* The sticky wrapper is measured (toolbarRef) for the chat sidebar's
+          offset; the pill floats inside it over the scrolling pages. */}
       <div
         ref={toolbarRef}
-        className="sticky top-0 z-10 flex w-full flex-wrap items-center justify-center gap-4 border-b border-border bg-background px-4 py-3"
+        className="pointer-events-none sticky top-0 z-10 flex w-full justify-center px-4 py-3"
       >
-        {pageSizes.length > 0 && (
-          <span className="text-sm tabular-nums text-secondary">
-            Page {currentPage} of {pageSizes.length}
-          </span>
-        )}
+        <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded-2xl border border-border bg-surface/90 px-2 py-1.5 text-sm text-on-surface shadow-paper backdrop-blur-sm">
+          {pageSizes.length > 0 && (
+            <span className="px-2 tabular-nums text-on-surface-secondary">
+              p. {currentPage} / {pageSizes.length}
+            </span>
+          )}
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => zoomTo(scale / ZOOM_STEP)}
-            disabled={scale <= MIN_SCALE}
-            aria-label="Zoom out"
-            className="h-8 w-8 rounded-md border border-border disabled:opacity-40"
-          >
-            −
-          </button>
-          <button
-            onClick={() => zoomTo(null)}
-            title="Fit to width"
-            className="min-w-16 rounded-md border border-border px-2 py-1.5 text-sm tabular-nums"
-          >
-            {zoom === null ? "Fit" : `${Math.round(scale * 100)}%`}
-          </button>
-          <button
-            onClick={() => zoomTo(scale * ZOOM_STEP)}
-            disabled={scale >= MAX_SCALE}
-            aria-label="Zoom in"
-            className="h-8 w-8 rounded-md border border-border disabled:opacity-40"
-          >
-            +
-          </button>
-        </div>
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
 
-        <div className="flex items-center gap-1">
-          {HIGHLIGHT_COLORS.map((c) => (
+          <div className="flex items-center">
             <button
-              key={c}
-              onClick={() => setColor(c)}
-              aria-label={`Highlight color ${c}`}
-              className="h-6 w-6 rounded-full border-2"
-              style={{
-                backgroundColor: HIGHLIGHT_COLOR_STYLES[c],
-                borderColor: c === color ? "currentColor" : "transparent",
-              }}
-            />
-          ))}
-        </div>
-
-        <button
-          onClick={saveBookmarkHere}
-          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5"
-        >
-          <BookmarkIcon filled={!!bookmark} className="h-4 w-4" />
-          Bookmark here
-        </button>
-
-        {bookmark && (
-          <div className="flex items-stretch rounded-md border border-border">
-            <button
-              onClick={() => scrollToPage(bookmark.pageNumber)}
-              className="px-3 py-1.5"
+              onClick={() => zoomTo(scale / ZOOM_STEP)}
+              disabled={scale <= MIN_SCALE}
+              aria-label="Zoom out"
+              className="rounded-full p-1.5 transition-colors hover:bg-background/60 disabled:opacity-40"
             >
-              Go to bookmark (p. {bookmark.pageNumber})
+              <MinusIcon className="h-4 w-4" />
             </button>
             <button
-              onClick={removeBookmark}
-              aria-label="Remove bookmark"
-              title="Remove bookmark"
-              className="border-l border-border px-2 text-secondary hover:text-error"
+              onClick={() => zoomTo(null)}
+              title="Fit to width"
+              className="min-w-14 rounded-full px-2 py-1 tabular-nums transition-colors hover:bg-background/60"
             >
-              <CloseIcon className="h-3.5 w-3.5" />
+              {zoom === null ? "Fit" : `${Math.round(scale * 100)}%`}
+            </button>
+            <button
+              onClick={() => zoomTo(scale * ZOOM_STEP)}
+              disabled={scale >= MAX_SCALE}
+              aria-label="Zoom in"
+              className="rounded-full p-1.5 transition-colors hover:bg-background/60 disabled:opacity-40"
+            >
+              <PlusIcon className="h-4 w-4" />
             </button>
           </div>
-        )}
 
-        <button
-          onClick={() => setChatOpen((v) => !v)}
-          className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5"
-        >
-          {!chatOpen && <ChatIcon className="h-4 w-4" />}
-          {chatOpen ? "Close chat" : "Ask Claude"}
-        </button>
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
 
-        {(pendingOcrPages.length > 0 || ocrProgress) && (
-          <button
-            onClick={runOcr}
-            disabled={!!ocrProgress}
-            className="rounded-md border border-border px-3 py-1.5 disabled:opacity-50"
-          >
-            {ocrProgress
-              ? `Reading scanned pages… ${ocrProgress.done}/${ocrProgress.total}`
-              : `Make scanned pages selectable (${pendingOcrPages.length})`}
+          <div className="flex items-center gap-1 px-1" role="group" aria-label="Highlight color">
+            {HIGHLIGHT_COLORS.map((c) => (
+              <button
+                key={c}
+                onClick={() => setColor(c)}
+                aria-label={`Highlight color ${c}`}
+                aria-pressed={c === color}
+                className="h-5 w-5 rounded-full border-2 transition-transform hover:scale-110"
+                style={{
+                  backgroundColor: HIGHLIGHT_COLOR_STYLES[c],
+                  borderColor: c === color ? "currentColor" : "transparent",
+                }}
+              />
+            ))}
+          </div>
+
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+
+          <button onClick={saveBookmarkHere} className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-background/60">
+            <BookmarkIcon filled={!!bookmark} className="h-4 w-4" />
+            Bookmark
           </button>
-        )}
+
+          {bookmark && (
+            <div className="flex items-stretch rounded-full bg-background/40">
+              <button
+                onClick={() => scrollToPage(bookmark.pageNumber)}
+                className="rounded-l-full px-3 py-1.5 transition-colors hover:bg-background/60"
+              >
+                Go to p. {bookmark.pageNumber}
+              </button>
+              <button
+                onClick={removeBookmark}
+                aria-label="Remove bookmark"
+                title="Remove bookmark"
+                className="rounded-r-full px-2 text-on-surface-secondary transition-colors hover:text-error"
+              >
+                <CloseIcon className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
+          <button
+            onClick={() => setChatOpen((v) => !v)}
+            aria-pressed={chatOpen}
+            className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors ${
+              chatOpen
+                ? "bg-background/60"
+                : "bg-accent-fill text-on-accent hover:opacity-90"
+            }`}
+          >
+            {chatOpen ? (
+              <CloseIcon className="h-4 w-4" />
+            ) : (
+              <ChatIcon className="h-4 w-4" />
+            )}
+            {chatOpen ? "Close chat" : "Ask Claude"}
+          </button>
+
+          {(pendingOcrPages.length > 0 || ocrProgress) && (
+            <button
+              onClick={runOcr}
+              disabled={!!ocrProgress}
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-background/60 disabled:opacity-50"
+            >
+              {ocrProgress
+                ? `Reading scanned pages… ${ocrProgress.done}/${ocrProgress.total}`
+                : `Make scanned pages selectable (${pendingOcrPages.length})`}
+            </button>
+          )}
+        </div>
       </div>
 
       {(ocrError || actionError) && (
@@ -547,10 +585,10 @@ export function DocumentReader({
         <div
           ref={columnRef}
           onMouseUp={handleMouseUp}
-          className="flex min-w-0 flex-1 flex-col gap-6 overflow-x-auto px-4 py-8"
+          className="flex min-w-0 flex-1 flex-col gap-8 overflow-x-auto px-4 pt-4 pb-12"
         >
           {!pdf || !pdfjs ? (
-            <p className="text-center text-secondary">Loading document…</p>
+            <p className="fade-in text-center text-secondary">Loading document…</p>
           ) : (
             pageSizes.map((size, i) => (
               <PdfPage

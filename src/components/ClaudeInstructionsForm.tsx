@@ -69,7 +69,7 @@ export const ClaudeInstructionsForm = ({
         <button
           type="submit"
           disabled={!dirty || status === "saving"}
-          className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
+          className="rounded-full bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
         >
           {status === "saving" ? "Saving…" : "Save"}
         </button>

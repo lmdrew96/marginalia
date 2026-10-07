@@ -17,7 +17,7 @@ export function detectFormat(filename: string): SupportedFormat | null {
 export async function convertToHtml(
   buffer: Buffer,
   format: SupportedFormat,
-): Promise<string> {
+): Promise<{ html: string; pageCount: number }> {
   switch (format) {
     case "pdf":
       return convertPdfToHtml(buffer);

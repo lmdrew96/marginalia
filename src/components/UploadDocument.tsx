@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { DOCX_MIME } from "@/lib/convert/docx";
+import { UploadIcon } from "@/components/icons";
 
 export function UploadDocument() {
   const router = useRouter();
@@ -74,8 +75,9 @@ export function UploadDocument() {
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={status === "uploading" || status === "converting"}
-        className="rounded-full bg-foreground px-5 py-2.5 font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+        className="flex items-center gap-2 rounded-full bg-accent-fill px-5 py-2.5 font-medium text-on-accent shadow-sm transition-opacity hover:opacity-90 disabled:opacity-50"
       >
+        <UploadIcon className="h-4 w-4" />
         {status === "uploading"
           ? "Uploading…"
           : status === "converting"
@@ -83,7 +85,7 @@ export function UploadDocument() {
             : "Upload a PDF or Word file"}
       </button>
       {status === "converting" && (
-        <p className="text-xs text-secondary">
+        <p className="fade-in text-xs text-secondary">
           Extracting text and images — this can take a bit for longer PDFs.
         </p>
       )}

@@ -2,11 +2,18 @@ import { auth } from "@clerk/nextjs/server";
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/db";
-import { highlights, bookmarks, chatMessages, pageOcr } from "@/db/schema";
+import {
+  documents,
+  highlights,
+  bookmarks,
+  chatMessages,
+  pageOcr,
+} from "@/db/schema";
 import { eq, asc, desc } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { getDownloadUrl } from "@/lib/r2";
 import { DocumentReader } from "@/components/DocumentReader";
+import { ArrowLeftIcon } from "@/components/icons";
 
 export default async function ReadPage({
   params,
@@ -40,19 +47,27 @@ export default async function ReadPage({
         .orderBy(desc(chatMessages.createdAt))
         .limit(20),
       db.select().from(pageOcr).where(eq(pageOcr.documentId, id)),
+      // For "last opened" on the library card.
+      db
+        .update(documents)
+        .set({ lastOpenedAt: new Date() })
+        .where(eq(documents.id, id)),
     ]);
   const docChatMessages = recentChat.reverse();
 
   return (
     <div className="flex flex-1 flex-col">
-      <header className="flex items-center justify-between border-b border-border px-6 py-3">
+      <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-6 pt-5 pb-1">
         <Link
           href="/library"
-          className="text-sm text-secondary hover:underline"
+          className="flex items-center gap-1.5 justify-self-start rounded-full px-2.5 py-1 text-sm text-secondary transition-colors hover:bg-surface hover:text-on-surface"
         >
-          ← Library
+          <ArrowLeftIcon className="h-4 w-4" />
+          Library
         </Link>
-        <h1 className="text-sm font-medium">{doc.title}</h1>
+        <h1 className="max-w-[50vw] truncate text-center font-display text-lg font-semibold tracking-tight">
+          {doc.title}
+        </h1>
         <span />
       </header>
       <DocumentReader
@@ -62,6 +77,7 @@ export default async function ReadPage({
         initialBookmarks={docBookmarks}
         initialChatMessages={docChatMessages}
         initialOcrPages={ocrPages}
+        reportPageCount={doc.pageCount === null}
       />
     </div>
   );

@@ -8,12 +8,19 @@ export default async function SettingsPage() {
   if (!userId) redirect("/sign-in");
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-      <ClaudeInstructionsForm
-        initial={await getClaudeInstructions(userId)}
-        maxLength={MAX_INSTRUCTIONS_LENGTH}
-      />
+    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-14">
+      <div>
+        <p className="eyebrow">Preferences</p>
+        <h1 className="font-display text-4xl font-semibold tracking-tight">
+          Settings
+        </h1>
+      </div>
+      <section className="rounded-xl border border-border p-6 shadow-sm">
+        <ClaudeInstructionsForm
+          initial={await getClaudeInstructions(userId)}
+          maxLength={MAX_INSTRUCTIONS_LENGTH}
+        />
+      </section>
     </div>
   );
 }

@@ -84,13 +84,15 @@ export async function POST(req: NextRequest) {
   }
 
   let content: string;
+  let pageCount: number;
   try {
     const t0 = performance.now();
     const buffer = await getObjectBuffer(fileKey);
     const t1 = performance.now();
-    const html = await convertToHtml(buffer, format);
+    const converted = await convertToHtml(buffer, format);
+    pageCount = converted.pageCount;
     const t2 = performance.now();
-    content = sanitizeDocumentHtml(html);
+    content = sanitizeDocumentHtml(converted.html);
     const t3 = performance.now();
     console.log(
       `[ingest] ${fileKey} (${(buffer.length / 1024).toFixed(0)}KB): ` +
@@ -106,7 +108,7 @@ export async function POST(req: NextRequest) {
 
   const [doc] = await db
     .insert(documents)
-    .values({ userId, title, fileUrl: fileKey, format, content })
+    .values({ userId, title, fileUrl: fileKey, format, content, pageCount })
     .returning();
 
   return NextResponse.json(doc, { status: 201 });

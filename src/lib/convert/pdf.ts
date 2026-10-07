@@ -188,7 +188,9 @@ export async function extractPdfPageTexts(
   return { numPages: doc.numPages, pages };
 }
 
-export async function convertPdfToHtml(buffer: Buffer): Promise<string> {
+export async function convertPdfToHtml(
+  buffer: Buffer,
+): Promise<{ html: string; pageCount: number }> {
   const tParse0 = performance.now();
   const doc = await openPdf(buffer);
   const tParse1 = performance.now();
@@ -220,5 +222,5 @@ export async function convertPdfToHtml(buffer: Buffer): Promise<string> {
   );
 
   const html = pages.filter(Boolean).join("\n");
-  return html || "<p></p>";
+  return { html: html || "<p></p>", pageCount: doc.numPages };
 }

@@ -20,6 +20,10 @@ export const documents = pgTable("documents", {
   uploadedAt: timestamp("uploaded_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // Shown on library cards. Null for documents ingested before v0.16.0
+  // until the reader opens them once and reports it.
+  pageCount: integer("page_count"),
+  lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
 });
 
 export const highlights = pgTable("highlights", {
