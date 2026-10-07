@@ -8,6 +8,14 @@
   // this to false unless it's set explicitly (ControlledChaos lost its
   // workers.dev hostname that way).
   "workers_dev": true,
+  // Declared here, not only in the dashboard: wrangler config is
+  // authoritative, so a dashboard-only route gets dropped on deploy.
+  "routes": [
+    {
+      "pattern": "marginalia.adhdesigns.dev",
+      "custom_domain": true
+    }
+  ],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
