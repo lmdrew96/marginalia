@@ -1,24 +1,13 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Marginalia is a reading room for PDFs: highlights, margin notes, and Ask Claude in the sidebar, with highlights saved to ThreadNotes as excerpts.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000). Environment variables live in `.env.local`. Note that its `DATABASE_URL` points at the production database.
 
 ## Word (.docx) uploads
 
@@ -28,19 +17,24 @@ Word files are converted to PDF by [Gotenberg](https://gotenberg.dev). In develo
 docker run --rm -p 3001:3000 gotenberg/gotenberg:8
 ```
 
-Elsewhere, set `GOTENBERG_URL` to the service's address.
+Elsewhere, set `GOTENBERG_URL` to the service's address. Without it, Word uploads fail with an "unavailable" message and PDFs still work.
 
-## Learn More
+## Deploy
 
-To learn more about Next.js, take a look at the following resources:
+Marginalia runs on Cloudflare Workers through [OpenNext](https://opennext.js.org/cloudflare). The Worker is configured in `wrangler.jsonc` and `open-next.config.ts`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `pnpm preview` builds the Worker and serves it locally in the Workers runtime. Use it to test anything server-side (PDF extraction, uploads) before shipping, since `pnpm dev` runs on Node instead.
+- Deploys go through the Workers Builds git connection to `lmdrew96/marginalia`, not a local `pnpm deploy`. A local deploy pushes `wrangler.jsonc` over the dashboard's settings.
+- The Worker bundle is about 4.4 MB gzipped, so it needs the Workers Paid plan (10 MB limit; free is 3 MB).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Environment
 
-## Deploy on Vercel
+Runtime secrets, set with `wrangler secret put <NAME>` or in the dashboard:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `DATABASE_URL`
+- `CLERK_SECRET_KEY`
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`
+- `ANTHROPIC_API_KEY`
+- `GOTENBERG_URL` (once Gotenberg is hosted)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The `NEXT_PUBLIC_CLERK_*` values (publishable key, sign-in/up URLs, fallback redirects) are compiled into the client at build time, so they have to be build variables in Workers Builds. A Worker secret can't supply them. `THREADNOTES_URL` is optional and defaults to `https://research.adhdesigns.dev`.

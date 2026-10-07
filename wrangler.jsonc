@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "marginalia",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  // Keep the workers.dev URL on. Adding a custom-domain route later flips
+  // this to false unless it's set explicitly (ControlledChaos lost its
+  // workers.dev hostname that way).
+  "workers_dev": true,
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      // OpenNext calls back into its own worker; must match "name".
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "marginalia"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

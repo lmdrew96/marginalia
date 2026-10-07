@@ -1,5 +1,8 @@
-import DOMPurify from "isomorphic-dompurify";
+import sanitizeHtml from "sanitize-html";
 
+// sanitize-html parses with htmlparser2, so it runs on Cloudflare Workers.
+// DOMPurify needs a DOM, which meant jsdom on the server, and jsdom can't
+// load there.
 const ALLOWED_TAGS = [
   "p",
   "h1",
@@ -18,8 +21,8 @@ const ALLOWED_TAGS = [
 ];
 
 export function sanitizeDocumentHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR: ["src", "alt", "href"],
+  return sanitizeHtml(html, {
+    allowedTags: ALLOWED_TAGS,
+    allowedAttributes: { img: ["src", "alt"], a: ["href"] },
   });
 }

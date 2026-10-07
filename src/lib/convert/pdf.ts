@@ -1,5 +1,3 @@
-import path from "node:path";
-
 type TextItem = {
   str: string;
   x: number;
@@ -124,26 +122,63 @@ type PdfDocument = Awaited<
   >["promise"]
 >;
 
+/**
+ * Just enough of a 2D DOMMatrix for pdfjs on Cloudflare Workers, which has
+ * none. pdfjs builds one at module load and, in the worker, scales and
+ * translates one for Type3 glyph masks; its Node fallback (@napi-rs/canvas)
+ * is a native module that can't load there. Text extraction needs nothing
+ * more.
+ */
+class AffineMatrix {
+  a = 1;
+  b = 0;
+  c = 0;
+  d = 1;
+  e = 0;
+  f = 0;
+
+  constructor(init?: number[]) {
+    if (init?.length === 6) [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+  }
+
+  multiplySelf(m: AffineMatrix): this {
+    const { a, b, c, d, e, f } = this;
+    this.a = a * m.a + c * m.b;
+    this.b = b * m.a + d * m.b;
+    this.c = a * m.c + c * m.d;
+    this.d = b * m.c + d * m.d;
+    this.e = a * m.e + c * m.f + e;
+    this.f = b * m.e + d * m.f + f;
+    return this;
+  }
+
+  scaleSelf(sx = 1, sy = sx): this {
+    return this.multiplySelf(new AffineMatrix([sx, 0, 0, sy, 0, 0]));
+  }
+
+  translateSelf(tx = 0, ty = 0): this {
+    return this.multiplySelf(new AffineMatrix([1, 0, 0, 1, tx, ty]));
+  }
+}
+
 async function openPdf(buffer: Buffer): Promise<PdfDocument> {
+  const globals = globalThis as { DOMMatrix?: unknown; pdfjsWorker?: unknown };
+  globals.DOMMatrix ??= AffineMatrix;
+
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-  // Under Next's bundler (Turbopack/webpack), pdfjs's own relative import
-  // of its worker script resolves against the bundled chunk output, not
-  // node_modules, and fails. Point it at the real file directly so pdfjs
-  // never tries to guess the path itself.
-  pdfjs.GlobalWorkerOptions.workerSrc = path.join(
-    process.cwd(),
-    "node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs",
+  // pdfjs runs its worker in this thread on the server. By default it
+  // imports the worker by path, which doesn't exist once bundled (and
+  // there's no node_modules on Workers at all). Handing it the bundled
+  // module through globalThis.pdfjsWorker skips that lookup.
+  globals.pdfjsWorker ??= await import(
+    "pdfjs-dist/legacy/build/pdf.worker.mjs"
   );
 
-  const standardFontDataUrl = path.join(
-    process.cwd(),
-    "node_modules/pdfjs-dist/standard_fonts/",
-  );
-
+  // Only text is read here, so standard font files aren't needed.
   return pdfjs.getDocument({
     data: new Uint8Array(buffer),
-    standardFontDataUrl,
+    disableFontFace: true,
   }).promise;
 }
 
