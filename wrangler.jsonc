@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "marginalia",
-  "main": ".open-next/worker.js",
+  "main": "worker.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   // Keep the workers.dev URL on. Adding a custom-domain route later flips
@@ -27,6 +27,26 @@
       "service": "marginalia"
     }
   ],
+  // Gotenberg (LibreOffice) for Word → PDF. The public image runs as-is, so
+  // there's no Docker build in CI. basic = 1/4 vCPU, 1 GiB, enough for
+  // LibreOffice on ordinary documents.
+  "containers": [
+    {
+      "class_name": "Gotenberg",
+      "image": "docker.io/gotenberg/gotenberg:8",
+      "instance_type": "basic",
+      "max_instances": 2
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "GOTENBERG", "class_name": "Gotenberg" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Gotenberg"] }],
+  // `pnpm preview` would need Docker to run the container. Locally, Word
+  // conversion uses GOTENBERG_URL / the docker command in the README.
+  "dev": {
+    "enable_containers": false
+  },
   "observability": {
     "enabled": true
   }
