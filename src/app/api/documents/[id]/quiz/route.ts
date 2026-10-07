@@ -15,13 +15,23 @@ import {
 
 export const runtime = "nodejs";
 
-export type QuizQuestion = {
+type QuizQuestionBase = {
   question: string;
+  // The model answer for short answers; why the right choice is right for
+  // multiple choice.
   answer: string;
   pageNumber: number;
   // Set when the question was drawn from one of the reader's highlights.
   highlightId: string | null;
 };
+
+export type QuizQuestion =
+  | (QuizQuestionBase & {
+      kind: "multiple_choice";
+      choices: string[];
+      correctIndex: number;
+    })
+  | (QuizQuestionBase & { kind: "short_answer" });
 
 const QUIZ_SCHEMA = {
   type: "object",
@@ -31,7 +41,19 @@ const QUIZ_SCHEMA = {
       items: {
         type: "object",
         properties: {
+          kind: { type: "string", enum: ["multiple_choice", "short_answer"] },
           question: { type: "string" },
+          choices: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Four answer options for multiple_choice; empty for short_answer",
+          },
+          correct: {
+            type: "integer",
+            description:
+              "Index into choices of the right option for multiple_choice; 0 for short_answer",
+          },
           answer: { type: "string" },
           page: {
             type: "integer",
@@ -43,7 +65,15 @@ const QUIZ_SCHEMA = {
               "Number of the highlight the question is drawn from, or 0 if it isn't drawn from a highlight",
           },
         },
-        required: ["question", "answer", "page", "highlight"],
+        required: [
+          "kind",
+          "question",
+          "choices",
+          "correct",
+          "answer",
+          "page",
+          "highlight",
+        ],
         additionalProperties: false,
       },
     },
@@ -56,7 +86,9 @@ const SYSTEM_PROMPT = `You write review questions to help a student study a read
 
 Write between 5 and 10 questions covering the most important ideas in those pages. The highlights mark what the reader found important, so weight them heavily: when there are highlights, draw roughly half or more of the questions from them, and use the reader's notes to see what they were thinking about. Fill the rest from the key ideas elsewhere in the pages. Draw only from the given text, never outside knowledge.
 
-Mix recall with "why/how" questions that check understanding. Keep each answer to a sentence or two, grounded in the text. For each question set "page" to the page the answer comes from, and "highlight" to the number of the highlight it's drawn from (0 if none). Markdown is fine in questions and answers.`;
+Mix recall with "why/how" questions that check understanding, and mix two kinds of question, roughly half each:
+- "multiple_choice": four options in "choices", exactly one right, with "correct" set to its index. Make the wrong options plausible to someone who skimmed — not obviously silly — and keep all four similar in length. "answer" says in a sentence or two why the right option is right.
+- "short_answer": the reader types a response, so ask something answerable in a sentence or two. Leave "choices" empty and set "correct" to 0. "answer" is the model answer, grounded in the text. For each question set "page" to the page the answer comes from, and "highlight" to the number of the highlight it's drawn from (0 if none). Markdown is fine in questions and answers.`;
 
 export async function POST(
   req: NextRequest,
@@ -215,26 +247,49 @@ export async function POST(
   try {
     const parsed = JSON.parse(text) as {
       questions: {
+        kind: "multiple_choice" | "short_answer";
         question: string;
+        choices: string[];
+        correct: number;
         answer: string;
         page: number;
         highlight: number;
       }[];
     };
-    questions = parsed.questions.flatMap((q) => {
+    questions = parsed.questions.flatMap((q): QuizQuestion[] => {
       if (!q.question || !q.answer) return [];
       const source = q.highlight > 0 ? rangeHighlights[q.highlight - 1] : null;
       // Trust the highlight's own page over the model's; otherwise keep the
       // page only if it's inside the quizzed range.
-      const pageNumber =
-        source?.pageNumber ??
-        (q.page >= from && q.page <= lastPage ? q.page : from);
+      const base = {
+        question: q.question,
+        answer: q.answer,
+        pageNumber:
+          source?.pageNumber ??
+          (q.page >= from && q.page <= lastPage ? q.page : from),
+        highlightId: source?.id ?? null,
+      };
+      if (q.kind === "short_answer") return [{ ...base, kind: "short_answer" }];
+      // A multiple-choice question without a valid right option is useless;
+      // drop it rather than show it.
+      const choices = q.choices.filter((c) => c.trim());
+      if (
+        choices.length < 2 ||
+        choices.length !== q.choices.length ||
+        !Number.isInteger(q.correct) ||
+        q.correct < 0 ||
+        q.correct >= choices.length
+      ) {
+        return [];
+      }
+      // Shuffle so the right option isn't always where the model put it.
+      const order = shuffle(choices.map((_, i) => i));
       return [
         {
-          question: q.question,
-          answer: q.answer,
-          pageNumber,
-          highlightId: source?.id ?? null,
+          ...base,
+          kind: "multiple_choice",
+          choices: order.map((i) => choices[i]),
+          correctIndex: order.indexOf(q.correct),
         },
       ];
     });
@@ -252,3 +307,12 @@ export async function POST(
 
   return NextResponse.json({ questions });
 }
+
+const shuffle = <T>(items: T[]): T[] => {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+};

@@ -7,7 +7,15 @@ import { Markdown } from "@/components/Markdown";
 import type { QuizQuestion } from "@/app/api/documents/[id]/quiz/route";
 
 // A quiz lives only in this component — nothing about it is saved.
-type Quiz = { questions: QuizQuestion[]; index: number; revealed: boolean };
+// `picked` is the chosen option on a multiple-choice question; `typed` is
+// the reader's short answer. Both reset on each new question.
+type Quiz = {
+  questions: QuizQuestion[];
+  index: number;
+  revealed: boolean;
+  picked: number | null;
+  typed: string;
+};
 // Page numbers stay strings while being typed, so a cleared field isn't
 // forced back to a number.
 type QuizSetup = { scope: "all" | "range"; from: string; to: string };
@@ -166,7 +174,13 @@ export function ChatSidebar({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? "Couldn't build a quiz");
       setQuizSetup(null);
-      setQuiz({ questions: body.questions, index: 0, revealed: false });
+      setQuiz({
+        questions: body.questions,
+        index: 0,
+        revealed: false,
+        picked: null,
+        typed: "",
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't build a quiz");
     } finally {
@@ -302,9 +316,97 @@ export function ChatSidebar({
           <div className="rounded-lg bg-surface px-3 py-2 text-sm text-on-surface">
             <Markdown>{current.question}</Markdown>
           </div>
-          {quiz.revealed ? (
+          {current.kind === "multiple_choice" ? (
+            <div className="flex flex-col gap-2" role="group" aria-label="Choices">
+              {current.choices.map((choice, i) => {
+                const isCorrect = i === current.correctIndex;
+                const isPicked = i === quiz.picked;
+                // Once answered, the right option and a wrong pick are marked
+                // with a label as well as a border, so color isn't the only cue.
+                const border = !quiz.revealed
+                  ? "border-border hover:bg-surface"
+                  : isCorrect
+                    ? "border-2 border-accent-fill"
+                    : isPicked
+                      ? "border-2 border-error"
+                      : "border-border opacity-70";
+                return (
+                  <button
+                    key={i}
+                    onClick={() =>
+                      setQuiz({ ...quiz, picked: i, revealed: true })
+                    }
+                    disabled={quiz.revealed}
+                    aria-pressed={isPicked}
+                    className={`rounded-lg border px-3 py-2 text-left text-sm ${border}`}
+                  >
+                    {quiz.revealed && (isCorrect || isPicked) && (
+                      <span
+                        className={`mb-1 block text-xs font-semibold ${isCorrect ? "text-secondary" : "text-error"}`}
+                      >
+                        {isCorrect
+                          ? isPicked
+                            ? "✓ Correct"
+                            : "✓ Right answer"
+                          : "✗ Your pick"}
+                      </span>
+                    )}
+                    <Markdown>{choice}</Markdown>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (quiz.typed.trim()) setQuiz({ ...quiz, revealed: true });
+              }}
+              className="flex flex-col gap-2"
+            >
+              <textarea
+                value={quiz.typed}
+                onChange={(e) => setQuiz({ ...quiz, typed: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                readOnly={quiz.revealed}
+                rows={3}
+                placeholder="Type your answer…"
+                aria-label="Your answer"
+                className="resize-none rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
+              />
+              {!quiz.revealed && (
+                <div className="flex justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setQuiz({ ...quiz, revealed: true })}
+                    className="text-xs text-secondary hover:underline"
+                  >
+                    Skip — show answer
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!quiz.typed.trim()}
+                    className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
+                  >
+                    Check answer
+                  </button>
+                </div>
+              )}
+            </form>
+          )}
+          {quiz.revealed && (
             <>
               <div className="rounded-lg border border-border px-3 py-2 text-sm">
+                <p className="mb-1 text-xs font-medium text-secondary">
+                  {current.kind === "multiple_choice"
+                    ? "Why"
+                    : "Model answer — compare it with yours"}
+                </p>
                 <Markdown>{current.answer}</Markdown>
               </div>
               <button
@@ -318,7 +420,13 @@ export function ChatSidebar({
               {quiz.index < quiz.questions.length - 1 ? (
                 <button
                   onClick={() =>
-                    setQuiz({ ...quiz, index: quiz.index + 1, revealed: false })
+                    setQuiz({
+                      ...quiz,
+                      index: quiz.index + 1,
+                      revealed: false,
+                      picked: null,
+                      typed: "",
+                    })
                   }
                   className="self-end rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background"
                 >
@@ -333,13 +441,6 @@ export function ChatSidebar({
                 </button>
               )}
             </>
-          ) : (
-            <button
-              onClick={() => setQuiz({ ...quiz, revealed: true })}
-              className="self-start rounded-md border border-border px-3 py-1.5 text-sm"
-            >
-              Show answer
-            </button>
           )}
         </div>
       ) : (
