@@ -1,3 +1,5 @@
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { db } from "@/db";
 import {
   highlights,
@@ -176,39 +178,97 @@ export const markReading = async (
 };
 
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_REDIRECTS = 5;
+
+// Loopback, private, link-local, CGNAT, and unspecified addresses: a PDF
+// link must never reach the server's own network.
+const isPrivateAddress = (ip: string): boolean => {
+  const v = ip.toLowerCase();
+  if (v.includes(":")) {
+    if (v.startsWith("::ffff:")) return isPrivateAddress(v.slice(7));
+    return v === "::1" || v === "::" || /^f[cd]/.test(v) || /^fe[89ab]/.test(v);
+  }
+  const [a, b] = v.split(".").map(Number);
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
+};
+
+const isPublicHttps = async (url: URL): Promise<boolean> => {
+  if (url.protocol !== "https:") return false;
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  const addresses = isIP(host)
+    ? [host]
+    : (await lookup(host, { all: true })).map((a) => a.address);
+  return addresses.length > 0 && !addresses.some(isPrivateAddress);
+};
 
 /**
  * Downloads a paper's PDF, or returns null when the link doesn't lead to
- * one (open-access links often point at a landing page instead).
+ * one (open-access links often point at a landing page instead). Follows
+ * redirects by hand so every hop is checked, and logs only the host:
+ * pdfUrl is signed, so the full URL is a credential.
  */
-export const downloadPdf = async (url: string): Promise<Buffer | null> => {
-  if (!url.startsWith("https://")) return null;
+export const downloadPdf = async (link: string): Promise<Buffer | null> => {
+  let url: URL;
   try {
-    const res = await fetch(url, {
-      redirect: "follow",
-      cache: "no-store",
-      signal: AbortSignal.timeout(30_000),
-    });
-    if (!res.ok) {
-      console.error(`PDF download from ${url} failed: ${res.status}`);
+    url = new URL(link);
+  } catch {
+    console.error("PDF link isn't a valid URL");
+    return null;
+  }
+  try {
+    const signal = AbortSignal.timeout(30_000);
+    let res: Response | null = null;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      if (!(await isPublicHttps(url))) {
+        console.error(`PDF link to ${url.host} isn't a public https address`);
+        return null;
+      }
+      res = await fetch(url, { redirect: "manual", cache: "no-store", signal });
+      const location = res.headers.get("location");
+      if (res.status < 300 || res.status >= 400 || !location) break;
+      await res.body?.cancel();
+      url = new URL(location, url);
+      res = null;
+    }
+    if (!res) {
+      console.error(`PDF link to ${url.host} redirected too many times`);
       return null;
     }
-    if (Number(res.headers.get("content-length") ?? 0) > MAX_PDF_BYTES) {
-      console.error(`PDF at ${url} is over the size limit`);
+    if (!res.ok || !res.body) {
+      console.error(`PDF download from ${url.host} failed: ${res.status}`);
       return null;
     }
-    const bytes = Buffer.from(await res.arrayBuffer());
-    if (bytes.length > MAX_PDF_BYTES) {
-      console.error(`PDF at ${url} is over the size limit`);
-      return null;
+
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > MAX_PDF_BYTES) {
+        await reader.cancel();
+        console.error(`PDF from ${url.host} is over the size limit`);
+        return null;
+      }
+      chunks.push(value);
     }
+    const bytes = Buffer.concat(chunks);
     if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") {
-      console.error(`${url} didn't return a PDF`);
+      console.error(`${url.host} didn't return a PDF`);
       return null;
     }
     return bytes;
   } catch (err) {
-    console.error(`PDF download from ${url} failed:`, err);
+    console.error(`PDF download from ${url.host} failed:`, err);
     return null;
   }
 };
@@ -299,11 +359,29 @@ export const saveHighlightAsExcerpt = async (
       page: highlight.pageNumber,
       articleId: doc.threadnotesArticleId,
     });
-    const [linked] = await db
-      .update(highlights)
-      .set({ threadnotesExcerptId: excerptId })
-      .where(eq(highlights.id, highlight.id))
-      .returning();
+    // If the link can't be stored (or the highlight was deleted meanwhile),
+    // take the excerpt back out so a retry can't leave a duplicate.
+    const unlink = async (reason: unknown): Promise<void> => {
+      console.error(`Linking excerpt ${excerptId} to highlight ${highlight.id} failed:`, reason);
+      await deleteExcerpt(apiKey, excerptId).catch((err) =>
+        console.error(`Couldn't remove unlinked excerpt ${excerptId}:`, err),
+      );
+    };
+    let linked: Highlight | undefined;
+    try {
+      [linked] = await db
+        .update(highlights)
+        .set({ threadnotesExcerptId: excerptId })
+        .where(eq(highlights.id, highlight.id))
+        .returning();
+    } catch (err) {
+      await unlink(err);
+      throw err;
+    }
+    if (!linked) {
+      await unlink("highlight no longer exists");
+      return { highlight };
+    }
     return { highlight: linked };
   } catch (err) {
     console.error(`Saving highlight ${highlight.id} to ThreadNotes failed:`, err);

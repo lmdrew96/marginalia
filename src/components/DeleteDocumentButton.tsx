@@ -26,6 +26,9 @@ export function DeleteDocumentButton({
     if (res.ok) {
       router.refresh();
     } else {
+      const body = await res.json().catch(() => ({}));
+      console.error(`Deleting document ${documentId} failed (${res.status})`);
+      window.alert(body.error ?? "Couldn't delete this document — try again.");
       setDeleting(false);
     }
   }

@@ -102,21 +102,27 @@ export async function DELETE(
   }
 
   // Remove the excerpt first, so a ThreadNotes failure leaves both in place
-  // to retry rather than an excerpt with no highlight. Without a saved key
-  // (ThreadNotes disconnected) there's nothing to reach; delete locally.
+  // to retry rather than an excerpt nothing here points to anymore.
   const excerptId = owned.highlight.threadnotesExcerptId;
   if (excerptId) {
     const { apiKey } = await getThreadNotesSettings(userId);
-    if (apiKey) {
-      try {
-        await deleteExcerpt(apiKey, excerptId);
-      } catch (err) {
-        console.error(`Deleting ThreadNotes excerpt ${excerptId} failed:`, err);
-        return NextResponse.json(
-          { error: "Couldn't remove it from ThreadNotes. Try again." },
-          { status: 502 },
-        );
-      }
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error:
+            "This highlight is also a ThreadNotes excerpt. Reconnect ThreadNotes in Settings to remove both.",
+        },
+        { status: 409 },
+      );
+    }
+    try {
+      await deleteExcerpt(apiKey, excerptId);
+    } catch (err) {
+      console.error(`Deleting ThreadNotes excerpt ${excerptId} failed:`, err);
+      return NextResponse.json(
+        { error: "Couldn't remove it from ThreadNotes. Try again." },
+        { status: 502 },
+      );
     }
   }
 

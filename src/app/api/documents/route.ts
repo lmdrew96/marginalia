@@ -65,6 +65,10 @@ export async function POST(req: NextRequest) {
     }
     const resolved = await resolveArticle(userId, threadnotesArticleId);
     if (!resolved.ok) {
+      // The browser already uploaded the file; it has no other use.
+      await deleteObject(key).catch((err) =>
+        console.error(`Couldn't delete unused upload ${key}:`, err),
+      );
       return NextResponse.json({ error: resolved.error }, { status: resolved.status });
     }
     threadnotes = resolved;

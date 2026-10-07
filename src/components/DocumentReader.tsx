@@ -346,7 +346,13 @@ export function DocumentReader({
     setActionError(null);
     try {
       const res = await fetch(`/api/highlights/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error(`Deleting highlight failed (${res.status})`);
+      if (!res.ok) {
+        // e.g. it's also a ThreadNotes excerpt and ThreadNotes is disconnected.
+        const body = await res.json().catch(() => ({}));
+        console.error(`Deleting highlight failed (${res.status})`);
+        setHighlights((prev) => [...prev, removed]);
+        setActionError(body.error ?? "Couldn't remove that highlight — try again.");
+      }
     } catch (err) {
       console.error(err);
       setHighlights((prev) => [...prev, removed]);

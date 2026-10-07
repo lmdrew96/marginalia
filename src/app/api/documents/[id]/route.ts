@@ -1,10 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { documents } from "@/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { documents, highlights } from "@/db/schema";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
 import { getDownloadUrl, deleteObject } from "@/lib/r2";
+import { deleteExcerpt, getThreadNotesSettings } from "@/lib/threadnotes";
 
 export const runtime = "nodejs";
 
@@ -40,6 +41,37 @@ export async function DELETE(
   const doc = await getOwnedDocument(id, userId);
   if (!doc) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Highlights saved to ThreadNotes take their excerpts with them. Do this
+  // before anything is deleted here, so a failure leaves the excerpt ids in
+  // place to retry with.
+  const synced = await db
+    .select({ excerptId: highlights.threadnotesExcerptId })
+    .from(highlights)
+    .where(
+      and(eq(highlights.documentId, id), isNotNull(highlights.threadnotesExcerptId)),
+    );
+  if (synced.length > 0) {
+    const { apiKey } = await getThreadNotesSettings(userId);
+    if (!apiKey) {
+      return NextResponse.json(
+        {
+          error:
+            "Its highlights are also ThreadNotes excerpts. Reconnect ThreadNotes in Settings to remove them too.",
+        },
+        { status: 409 },
+      );
+    }
+    try {
+      await Promise.all(synced.map((h) => deleteExcerpt(apiKey, h.excerptId!)));
+    } catch (err) {
+      console.error(`Deleting ThreadNotes excerpts for document ${id} failed:`, err);
+      return NextResponse.json(
+        { error: "Couldn't remove its excerpts from ThreadNotes. Try again." },
+        { status: 502 },
+      );
+    }
   }
 
   // Extracted images aren't tracked in a table, but their keys are embedded

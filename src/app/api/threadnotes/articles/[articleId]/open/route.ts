@@ -25,25 +25,28 @@ export async function POST(
   }
 
   const { articleId } = await params;
-  const resolved = await resolveArticle(userId, articleId);
-  if (!resolved.ok) {
-    return NextResponse.json({ error: resolved.error }, { status: resolved.status });
-  }
-  const { apiKey, projectId, article } = resolved;
-
+  // An already-opened paper opens from here even if ThreadNotes is down;
+  // only its status update needs ThreadNotes.
   const [existing] = await db
     .select({ id: documents.id })
     .from(documents)
     .where(
       and(
         eq(documents.userId, userId),
-        eq(documents.threadnotesArticleId, article.id),
+        eq(documents.threadnotesArticleId, articleId),
       ),
     );
+
+  const resolved = await resolveArticle(userId, articleId);
   if (existing) {
-    await markReading(apiKey, article);
+    if (resolved.ok) await markReading(resolved.apiKey, resolved.article);
+    else console.error(`Couldn't update status of ThreadNotes article ${articleId}: ${resolved.error}`);
     return NextResponse.json({ documentId: existing.id });
   }
+  if (!resolved.ok) {
+    return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+  }
+  const { apiKey, projectId, article } = resolved;
 
   // The PDF stored in ThreadNotes first, then the open-access copy.
   let pdf: Buffer | null = null;
