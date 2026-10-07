@@ -99,10 +99,12 @@ export const createExcerpt = async (
   const body = (await call(apiKey, { projectId }, {
     method: "POST",
     body: excerpt,
-  })) as { id?: string; excerpt?: { id?: string } } | null;
-  const id = body?.id ?? body?.excerpt?.id;
-  if (!id) throw new ThreadNotesError("ThreadNotes didn't return an excerpt id", 502);
-  return id;
+  })) as { excerptId?: string; error?: string } | null;
+  // ThreadNotes answers 200 with an `error` (and an empty excerptId) when it
+  // can't place the excerpt, e.g. the article isn't in that project.
+  if (body?.error) throw new ThreadNotesError(body.error, 422);
+  if (!body?.excerptId) throw new ThreadNotesError("ThreadNotes didn't return an excerpt id", 502);
+  return body.excerptId;
 };
 
 export const updateExcerpt = async (
