@@ -2,28 +2,18 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import type { ThreadNotesProject } from "@/lib/threadnotes";
 
+// Projects are picked on the Papers page; this form only holds the key.
 export const ThreadNotesSettingsForm = ({
   initialConnected,
-  initialProjects,
-  initialProjectId,
-  loadError,
 }: {
   initialConnected: boolean;
-  initialProjects: ThreadNotesProject[];
-  initialProjectId: string | null;
-  // Set when a key is saved but ThreadNotes couldn't list its projects.
-  loadError: string | null;
 }): React.JSX.Element => {
   const [connected, setConnected] = useState(initialConnected);
-  const [projects, setProjects] = useState(initialProjects);
-  const [projectId, setProjectId] = useState(initialProjectId);
-  const [pickedId, setPickedId] = useState(initialProjectId ?? "");
   const [keyDraft, setKeyDraft] = useState("");
   const [replacingKey, setReplacingKey] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(loadError);
+  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const put = async (body: object): Promise<Record<string, unknown> | null> => {
@@ -49,32 +39,17 @@ export const ThreadNotesSettingsForm = ({
   };
 
   const connect = async () => {
-    const data = await put({ apiKey: keyDraft });
-    if (!data) return;
-    const list = (data.projects as ThreadNotesProject[]) ?? [];
+    if (!(await put({ apiKey: keyDraft }))) return;
     setConnected(true);
-    setProjects(list);
-    setProjectId(null);
-    // Start the picker on ThreadNotes' active project.
-    setPickedId(list.find((p) => p.active)?.id ?? list[0]?.id ?? "");
     setKeyDraft("");
     setReplacingKey(false);
-    setNotice("Connected. Now pick the project to read from.");
+    setNotice("Connected. Pick a project on the Papers page.");
   };
 
   const disconnect = async () => {
     if (!(await put({ apiKey: null }))) return;
     setConnected(false);
-    setProjects([]);
-    setProjectId(null);
-    setPickedId("");
     setNotice("Disconnected. Your highlights stay here.");
-  };
-
-  const saveProject = async () => {
-    if (!(await put({ projectId: pickedId }))) return;
-    setProjectId(pickedId);
-    setNotice("Saved.");
   };
 
   const keyForm = (
@@ -124,42 +99,10 @@ export const ThreadNotesSettingsForm = ({
         keyForm
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-2">
-            <label htmlFor="threadnotes-project" className="text-sm">
-              Project
-            </label>
-            <select
-              id="threadnotes-project"
-              value={pickedId}
-              onChange={(e) => {
-                setPickedId(e.target.value);
-                setNotice(null);
-              }}
-              disabled={projects.length === 0}
-              className="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-            >
-              {!pickedId && <option value="">Pick a project…</option>}
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.articleCount})
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => void saveProject()}
-              disabled={!pickedId || pickedId === projectId || busy}
-              className="rounded-full bg-foreground px-3 py-1.5 text-sm font-medium text-background disabled:opacity-50"
-            >
-              Use this project
-            </button>
-          </div>
           <div className="flex flex-wrap items-center gap-3 text-sm">
-            {projectId && (
-              <Link href="/threadnotes" className="text-accent hover:underline">
-                Open your papers
-              </Link>
-            )}
+            <Link href="/threadnotes" className="text-accent hover:underline">
+              Open your papers
+            </Link>
             <button
               type="button"
               onClick={() => setReplacingKey(true)}

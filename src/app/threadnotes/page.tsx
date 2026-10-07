@@ -11,8 +11,10 @@ import {
   ThreadNotesError,
   type ArticleStatus,
   type ThreadNotesLibrary,
+  type ThreadNotesProject,
 } from "@/lib/threadnotes";
 import { OpenThreadNotesArticle } from "@/components/OpenThreadNotesArticle";
+import { ThreadNotesProjectPicker } from "@/components/ThreadNotesProjectPicker";
 import { BookOpenIcon } from "@/components/icons";
 
 const STATUS_LABELS: Record<ArticleStatus, string> = {
@@ -41,6 +43,31 @@ const settingsLink = (
   </Link>
 );
 
+/** Every project to pick from, or null when ThreadNotes can't list them. */
+const listProjects = async (
+  apiKey: string,
+): Promise<ThreadNotesProject[] | null> => {
+  try {
+    return (await getLibrary(apiKey)).projects;
+  } catch (err) {
+    console.error("Listing ThreadNotes projects failed:", err);
+    return null;
+  }
+};
+
+const pickerOrRetry = (
+  projects: ThreadNotesProject[] | null,
+): React.JSX.Element =>
+  projects ? (
+    <div className="mt-2 flex justify-center">
+      <ThreadNotesProjectPicker projects={projects} currentId={null} />
+    </div>
+  ) : (
+    <p className="mt-2 text-sm">
+      Couldn&apos;t load your projects. Try again in a moment.
+    </p>
+  );
+
 export default async function ThreadNotesPage() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
@@ -59,7 +86,8 @@ export default async function ThreadNotesPage() {
   } else if (!projectId) {
     problem = (
       <Message title="Pick a project">
-        Choose which ThreadNotes project to read from in {settingsLink}.
+        Choose which ThreadNotes project to read from.
+        {pickerOrRetry(await listProjects(apiKey))}
       </Message>
     );
   } else {
@@ -72,8 +100,8 @@ export default async function ThreadNotesPage() {
       problem =
         status === 404 ? (
           <Message title="That project is gone">
-            It was trashed or removed in ThreadNotes. Pick another in{" "}
-            {settingsLink}.
+            It was trashed or removed in ThreadNotes. Pick another.
+            {pickerOrRetry(await listProjects(apiKey))}
           </Message>
         ) : status === 401 || status === 403 ? (
           <Message title="ThreadNotes didn't accept your key">
@@ -112,10 +140,18 @@ export default async function ThreadNotesPage() {
           {library ? library.project.name : "Your papers"}
         </h1>
         {library && (
-          <p className="mt-1 text-sm text-secondary">
-            Highlights you make in these papers are saved to ThreadNotes as
-            excerpts. Switch projects in {settingsLink}.
-          </p>
+          <>
+            <p className="mt-1 text-sm text-secondary">
+              Highlights you make in these papers are saved to ThreadNotes as
+              excerpts.
+            </p>
+            <div className="mt-4">
+              <ThreadNotesProjectPicker
+                projects={library.projects}
+                currentId={library.project.id}
+              />
+            </div>
+          </>
         )}
       </div>
 
