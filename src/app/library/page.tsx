@@ -78,7 +78,7 @@ export default async function LibraryPage() {
             return (
               <li
                 key={doc.id}
-                className="fade-in group flex items-center rounded-xl border border-l-4 border-border bg-background shadow-sm transition-shadow hover:shadow-paper"
+                className="fade-in group flex items-center rounded-xl border border-l-4 border-border bg-surface/30 shadow-sm transition-shadow hover:shadow-paper"
                 style={{
                   borderLeftColor: unopened
                     ? "var(--marker)"
