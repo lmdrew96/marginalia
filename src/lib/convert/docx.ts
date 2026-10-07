@@ -18,6 +18,8 @@ type GotenbergEnv = {
 };
 
 const CONVERT_PATH = "/forms/libreoffice/convert";
+// Waits before the 2nd and 3rd attempts.
+const RETRY_DELAYS_MS = [2_000, 4_000];
 
 // GOTENBERG_URL wins when set; in development it defaults to the local
 // Docker container; otherwise the Worker's container binding is used.
@@ -48,20 +50,30 @@ export async function convertDocxToPdf(
   const form = new FormData();
   form.append("files", new Blob([new Uint8Array(buffer)]), filename);
 
-  let res: Response;
-  try {
-    res = await sendToGotenberg(form);
-  } catch (err) {
-    if (err instanceof DocxConversionUnavailableError) throw err;
-    // Connection refused, container failed to start, etc.
-    throw new DocxConversionUnavailableError(
-      `Gotenberg unreachable: ${err instanceof Error ? err.message : err}`,
-    );
+  // Server-side failures are retried: the container can still be starting
+  // on the first request after it slept. A 4xx means the file itself was
+  // rejected, so that fails straight away.
+  let lastFailure = "";
+  for (let attempt = 0; attempt < RETRY_DELAYS_MS.length + 1; attempt++) {
+    if (attempt > 0) {
+      console.warn(`Gotenberg attempt ${attempt} failed (${lastFailure}); retrying`);
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1]));
+    }
+
+    let res: Response;
+    try {
+      res = await sendToGotenberg(form);
+    } catch (err) {
+      if (err instanceof DocxConversionUnavailableError) throw err;
+      // Connection refused, container failed to start, etc.
+      lastFailure = `unreachable: ${err instanceof Error ? err.message : err}`;
+      continue;
+    }
+    if (res.ok) return Buffer.from(await res.arrayBuffer());
+
+    const detail = `${res.status}: ${(await res.text()).slice(0, 300)}`;
+    if (res.status < 500) throw new Error(`Gotenberg returned ${detail}`);
+    lastFailure = `returned ${detail}`;
   }
-  if (!res.ok) {
-    throw new Error(
-      `Gotenberg returned ${res.status}: ${(await res.text()).slice(0, 300)}`,
-    );
-  }
-  return Buffer.from(await res.arrayBuffer());
+  throw new DocxConversionUnavailableError(`Gotenberg ${lastFailure}`);
 }
