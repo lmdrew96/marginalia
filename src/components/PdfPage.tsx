@@ -366,7 +366,7 @@ export function PdfPage({
         </div>
 
         {/* Marks highlights that carry a comment — the only sign of one when
-            the margin is hidden on narrow screens. */}
+            the margin is collapsed or hidden on narrow screens. */}
         <div className="pointer-events-none absolute inset-0 z-[2]">
           {highlights.map((h) => {
             const first = rects[h.id]?.[0];

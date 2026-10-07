@@ -17,6 +17,7 @@ import {
   BookmarkIcon,
   ChatIcon,
   CloseIcon,
+  MarginIcon,
   MinusIcon,
   PlusIcon,
 } from "@/components/icons";
@@ -87,13 +88,19 @@ export function DocumentReader({
   const [actionError, setActionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  // Margin notes collapse into the comment marker on each highlight. They
+  // collapse automatically while chat is open (to give the page its width
+  // back) and return to the reader's choice when it closes.
+  const [notesCollapsed, setNotesCollapsed] = useState(false);
+  const notesBeforeChatRef = useRef(false);
   const [currentPage, setCurrentPage] = useState(1);
   // The chat sidebar sticks just below the toolbar, which can wrap onto
   // more lines on narrow windows.
   const [toolbarHeight, setToolbarHeight] = useState(0);
 
-  const showMargin =
-    columnWidth >= MIN_COLUMN_FOR_MARGIN_PX && highlights.some((h) => h.comment);
+  const commentCount = highlights.filter((h) => h.comment).length;
+  const marginFits = columnWidth >= MIN_COLUMN_FOR_MARGIN_PX;
+  const showMargin = marginFits && commentCount > 0 && !notesCollapsed;
   const marginWidth = showMargin ? MARGIN_GUTTER_PX : 0;
   const widestPage = Math.max(0, ...pageSizes.map((s) => s.width));
   const fitScale =
@@ -174,6 +181,17 @@ export function DocumentReader({
     observer.observe(column);
     return () => observer.disconnect();
   }, []);
+
+  const setChat = (open: boolean): void => {
+    if (open === chatOpen) return;
+    if (open) {
+      notesBeforeChatRef.current = notesCollapsed;
+      setNotesCollapsed(true);
+    } else {
+      setNotesCollapsed(notesBeforeChatRef.current);
+    }
+    setChatOpen(open);
+  };
 
   const toolbarBottom = () =>
     toolbarRef.current?.getBoundingClientRect().bottom ?? 0;
@@ -544,8 +562,23 @@ export function DocumentReader({
             </div>
           )}
 
+          {commentCount > 0 && marginFits && (
+            <button
+              onClick={() => setNotesCollapsed((v) => !v)}
+              aria-pressed={!notesCollapsed}
+              title={notesCollapsed ? "Show margin notes" : "Hide margin notes"}
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-background/60"
+            >
+              <MarginIcon className="h-4 w-4" />
+              <span className="tabular-nums">{commentCount}</span>
+              <span className="sr-only">
+                {notesCollapsed ? "Show margin notes" : "Hide margin notes"}
+              </span>
+            </button>
+          )}
+
           <button
-            onClick={() => setChatOpen((v) => !v)}
+            onClick={() => setChat(!chatOpen)}
             aria-pressed={chatOpen}
             className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 font-medium transition-colors ${
               chatOpen
@@ -615,7 +648,7 @@ export function DocumentReader({
           highlights={highlights}
           initialMessages={initialChatMessages}
           open={chatOpen}
-          onClose={() => setChatOpen(false)}
+          onClose={() => setChat(false)}
           pageCount={pageSizes.length}
           stickyTop={toolbarHeight}
           currentPage={currentPage}

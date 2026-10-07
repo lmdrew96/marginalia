@@ -153,3 +153,10 @@ export const MinusIcon = ({ className }: { className?: string }): React.JSX.Elem
     <path d="M4.5 10h11" />
   </LineIcon>
 );
+
+export const MarginIcon = ({ className }: { className?: string }): React.JSX.Element => (
+  <LineIcon className={className}>
+    <rect x="2.5" y="3.5" width="15" height="13" rx="2" />
+    <path d="M12.5 3.5v13M14.5 7h1M14.5 10h1" />
+  </LineIcon>
+);
