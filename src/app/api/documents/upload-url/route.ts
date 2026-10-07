@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getUploadUrl } from "@/lib/r2";
+import { DOCX_MIME, isDocx } from "@/lib/convert/docx";
 
 export async function POST(req: NextRequest) {
   const { userId } = await auth();
@@ -9,9 +10,15 @@ export async function POST(req: NextRequest) {
   }
 
   const { filename, contentType } = await req.json();
-  if (!filename || contentType !== "application/pdf") {
+  // The extension decides how the file is processed, so it must agree with
+  // the content type the upload is signed for.
+  const ok =
+    typeof filename === "string" &&
+    ((/\.pdf$/i.test(filename) && contentType === "application/pdf") ||
+      (isDocx(filename) && contentType === DOCX_MIME));
+  if (!ok) {
     return NextResponse.json(
-      { error: "PDF uploads only for now" },
+      { error: "Upload a PDF or Word (.docx) file" },
       { status: 400 },
     );
   }

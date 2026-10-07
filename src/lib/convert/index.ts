@@ -1,4 +1,11 @@
 import { convertPdfToHtml } from "./pdf";
+export {
+  convertDocxToPdf,
+  DocxConversionUnavailableError,
+  isDocx,
+} from "./docx";
+
+// Stored documents are always PDFs; Word uploads are converted on ingest.
 export type SupportedFormat = "pdf";
 
 export function detectFormat(filename: string): SupportedFormat | null {

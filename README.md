@@ -20,6 +20,16 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Word (.docx) uploads
+
+Word files are converted to PDF by [Gotenberg](https://gotenberg.dev). In development the app expects it on port 3001:
+
+```bash
+docker run --rm -p 3001:3000 gotenberg/gotenberg:8
+```
+
+Elsewhere, set `GOTENBERG_URL` to the service's address.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

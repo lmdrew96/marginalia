@@ -26,6 +26,21 @@ export async function getUploadUrl(key: string, contentType: string) {
   return getSignedUrl(r2, command, { expiresIn: 300 });
 }
 
+export async function putObject(
+  key: string,
+  body: Buffer,
+  contentType: string,
+): Promise<void> {
+  await r2.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+}
+
 export async function getDownloadUrl(key: string) {
   const command = new GetObjectCommand({ Bucket: BUCKET, Key: key });
   return getSignedUrl(r2, command, { expiresIn: 3600 });

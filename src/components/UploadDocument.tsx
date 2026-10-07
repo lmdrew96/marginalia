@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
+import { DOCX_MIME } from "@/lib/convert/docx";
 
 export function UploadDocument() {
   const router = useRouter();
@@ -14,6 +15,10 @@ export function UploadDocument() {
   async function handleFile(file: File) {
     setStatus("uploading");
     setError(null);
+    // Some browsers leave .docx files without a type; the server checks
+    // the extension and type agree, so fill it in.
+    const contentType =
+      file.type || (/\.docx$/i.test(file.name) ? DOCX_MIME : "");
 
     try {
       const urlRes = await fetch("/api/documents/upload-url", {
@@ -21,7 +26,7 @@ export function UploadDocument() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           filename: file.name,
-          contentType: file.type,
+          contentType,
         }),
       });
       if (!urlRes.ok) throw new Error((await urlRes.json()).error);
@@ -29,7 +34,7 @@ export function UploadDocument() {
 
       const putRes = await fetch(uploadUrl, {
         method: "PUT",
-        headers: { "Content-Type": file.type },
+        headers: { "Content-Type": contentType },
         body: file,
       });
       if (!putRes.ok) throw new Error("Upload to storage failed");
@@ -38,7 +43,7 @@ export function UploadDocument() {
       const docRes = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: file.name.replace(/\.pdf$/i, ""), key }),
+        body: JSON.stringify({ title: file.name.replace(/\.(pdf|docx)$/i, ""), key }),
       });
       if (!docRes.ok) throw new Error((await docRes.json()).error);
       const doc = await docRes.json();
@@ -58,7 +63,7 @@ export function UploadDocument() {
       <input
         ref={inputRef}
         type="file"
-        accept="application/pdf"
+        accept={`application/pdf,.docx,${DOCX_MIME}`}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -75,7 +80,7 @@ export function UploadDocument() {
           ? "Uploading…"
           : status === "converting"
             ? "Converting…"
-            : "Upload a PDF"}
+            : "Upload a PDF or Word file"}
       </button>
       {status === "converting" && (
         <p className="text-xs text-secondary">
