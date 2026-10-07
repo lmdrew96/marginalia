@@ -2,8 +2,9 @@ import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { chatMessages, highlights } from "@/db/schema";
-import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
+import Anthropic from "@anthropic-ai/sdk";
 import { anthropic, CHAT_MODEL, DAILY_MESSAGE_LIMIT } from "@/lib/anthropic";
 import {
   formatPages,
@@ -27,6 +28,12 @@ const CHUNK_CHARS = 100_000;
  * the name).
  */
 const CONTEXT_PAGES_HEADER = "X-Context-Pages";
+
+// Claude sees at least this many earlier messages. The window's start only
+// moves in steps of HISTORY_STEP, so the history stays an identical,
+// cacheable prefix for that many turns instead of shifting every message.
+const HISTORY_MIN = 20;
+const HISTORY_STEP = 10;
 
 const pagesForContext = (
   pages: PageText[],
@@ -143,20 +150,30 @@ export async function POST(
     );
   }
 
-  const [docHighlights, recentHistory, instructions] = await Promise.all([
+  const [docHighlights, [{ total }], instructions] = await Promise.all([
     db
       .select()
       .from(highlights)
       .where(eq(highlights.documentId, id))
       .orderBy(asc(highlights.pageNumber), asc(highlights.pageStartOffset)),
     db
-      .select()
+      .select({ total: sql<number>`count(*)::int` })
       .from(chatMessages)
-      .where(eq(chatMessages.documentId, id))
-      .orderBy(desc(chatMessages.createdAt))
-      .limit(20),
+      .where(eq(chatMessages.documentId, id)),
     getClaudeInstructions(userId),
   ]);
+  const historyStart =
+    Math.floor(Math.max(0, total - HISTORY_MIN) / HISTORY_STEP) * HISTORY_STEP;
+  const windowRows = await db
+    .select()
+    .from(chatMessages)
+    .where(eq(chatMessages.documentId, id))
+    .orderBy(asc(chatMessages.createdAt))
+    .offset(historyStart);
+  // The API needs the conversation to open with a user turn; an earlier
+  // failed reply can leave an assistant message at the window's start.
+  const history =
+    windowRows[0]?.role === "assistant" ? windowRows.slice(1) : windowRows;
 
   await db
     .insert(chatMessages)
@@ -172,7 +189,8 @@ export async function POST(
     formatPages(context.pages) ||
     "(These pages have no text yet. If they're scanned, the reader can make them selectable.)";
 
-  // Cached: only changes when the reader moves into a different range.
+  // Cached (with the reader's instructions after it): only changes when the
+  // reader moves into a different range.
   const documentPrompt = `You are Marginalia's reading assistant, embedded in a sidebar next to the document the user is reading. Answer using the document text below as your primary context, citing page numbers when it helps. Keep answers concise and conversational. Markdown is rendered.
 
 Document: "${doc.title}" (${allPages.length} pages). You can see ${scope}.${
@@ -184,8 +202,8 @@ Document: "${doc.title}" (${allPages.length} pages). You can see ${scope}.${
 ${pagesText}
 </document>`;
 
-  // Changes often (new highlights, scrolling), so it sits after the cache
-  // breakpoint.
+  // Changes often (new highlights, scrolling), so it rides in the newest
+  // user turn, after both cache breakpoints.
   const highlightsBlock = docHighlights.length
     ? docHighlights
         .map(
@@ -195,12 +213,38 @@ ${pagesText}
         )
         .join("\n")
     : "(none)";
-  const readerPrompt = `The reader is on page ${readerPage}.
+  const readerContext = `<reader_context>
+The reader is on page ${readerPage}.
 
 Highlights the reader has made in this document:
-${highlightsBlock}`;
+${highlightsBlock}
+</reader_context>`;
 
-  const orderedHistory = recentHistory.reverse();
+  // Breakpoint 1: the end of the system prompt (document + instructions).
+  const systemBlocks: Anthropic.TextBlockParam[] = [
+    { type: "text", text: documentPrompt },
+    ...instructionsBlock(instructions),
+  ];
+  systemBlocks[systemBlocks.length - 1] = {
+    ...systemBlocks[systemBlocks.length - 1],
+    cache_control: { type: "ephemeral" },
+  };
+
+  // Breakpoint 2: the end of the earlier messages, so the conversation so
+  // far is read from cache and each turn pays mostly for itself.
+  const historyMessages: Anthropic.MessageParam[] = history.map((m, i) => ({
+    role: m.role as "user" | "assistant",
+    content:
+      i === history.length - 1
+        ? [
+            {
+              type: "text" as const,
+              text: m.content,
+              cache_control: { type: "ephemeral" as const },
+            },
+          ]
+        : m.content,
+  }));
 
   const encoder = new TextEncoder();
   let fullText = "";
@@ -212,21 +256,16 @@ ${highlightsBlock}`;
           model: CHAT_MODEL,
           max_tokens: 4096,
           output_config: { effort: "medium" },
-          system: [
-            {
-              type: "text",
-              text: documentPrompt,
-              cache_control: { type: "ephemeral" },
-            },
-            ...instructionsBlock(instructions),
-            { type: "text", text: readerPrompt },
-          ],
+          system: systemBlocks,
           messages: [
-            ...orderedHistory.map((m) => ({
-              role: m.role as "user" | "assistant",
-              content: m.content,
-            })),
-            { role: "user" as const, content: message },
+            ...historyMessages,
+            {
+              role: "user",
+              content: [
+                { type: "text", text: readerContext },
+                { type: "text", text: message },
+              ],
+            },
           ],
         });
 
@@ -239,7 +278,13 @@ ${highlightsBlock}`;
             controller.enqueue(encoder.encode(event.delta.text));
           }
         }
-        await anthropicStream.finalMessage();
+        const final = await anthropicStream.finalMessage();
+        console.log(
+          `[chat] ${id} history=${history.length}: ` +
+            `cache_read=${final.usage.cache_read_input_tokens ?? 0} ` +
+            `cache_write=${final.usage.cache_creation_input_tokens ?? 0} ` +
+            `uncached=${final.usage.input_tokens}`,
+        );
 
         await db.insert(chatMessages).values({
           documentId: id,
