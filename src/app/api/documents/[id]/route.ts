@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { documents, highlights } from "@/db/schema";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getOwnedDocument } from "@/lib/documents";
+import { getOwnedFolder } from "@/lib/folders";
 import { getDownloadUrl, deleteObject } from "@/lib/r2";
 import { deleteExcerpt, getThreadNotesSettings } from "@/lib/threadnotes";
 
@@ -100,7 +101,8 @@ const isPage = (n: unknown): n is number =>
 
 // The reader reports the page it's on (lastPage), and the page count for
 // documents ingested before it was stored (pageCount). pageCount only fills
-// a missing value; ingest sets it for new documents.
+// a missing value; ingest sets it for new documents. The library moves a
+// document between folders (folderId; null unfiles it).
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -116,12 +118,21 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { pageCount, lastPage } = await req.json().catch(() => ({}));
-  if (pageCount === undefined && lastPage === undefined) {
+  const { pageCount, lastPage, folderId } = await req.json().catch(() => ({}));
+  if (pageCount === undefined && lastPage === undefined && folderId === undefined) {
     return NextResponse.json(
-      { error: "Send pageCount or lastPage" },
+      { error: "Send pageCount, lastPage or folderId" },
       { status: 400 },
     );
+  }
+  if (folderId !== undefined) {
+    if (
+      folderId !== null &&
+      (typeof folderId !== "string" || !(await getOwnedFolder(folderId, userId)))
+    ) {
+      return NextResponse.json({ error: "That folder doesn't exist." }, { status: 400 });
+    }
+    await db.update(documents).set({ folderId }).where(eq(documents.id, id));
   }
   if (
     (pageCount !== undefined && !isPage(pageCount)) ||

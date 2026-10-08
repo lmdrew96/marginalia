@@ -1,11 +1,10 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import Link from "next/link";
 import { db } from "@/db";
-import { documents, highlights } from "@/db/schema";
-import { eq, desc, sql } from "drizzle-orm";
+import { documents, folders, highlights } from "@/db/schema";
+import { asc, eq, desc, sql } from "drizzle-orm";
 import { UploadDocument } from "@/components/UploadDocument";
-import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
+import { LibraryView, type LibraryDoc } from "@/components/LibraryView";
 import { BookOpenIcon } from "@/components/icons";
 
 const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -26,20 +25,50 @@ export default async function LibraryPage() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  const docs = await db
-    .select({
-      id: documents.id,
-      title: documents.title,
-      uploadedAt: documents.uploadedAt,
-      pageCount: documents.pageCount,
-      lastOpenedAt: documents.lastOpenedAt,
-      highlightCount: sql<number>`count(${highlights.id})::int`,
-    })
-    .from(documents)
-    .leftJoin(highlights, eq(highlights.documentId, documents.id))
-    .where(eq(documents.userId, userId))
-    .groupBy(documents.id)
-    .orderBy(desc(documents.uploadedAt));
+  const [docs, userFolders] = await Promise.all([
+    db
+      .select({
+        id: documents.id,
+        title: documents.title,
+        uploadedAt: documents.uploadedAt,
+        pageCount: documents.pageCount,
+        lastOpenedAt: documents.lastOpenedAt,
+        folderId: documents.folderId,
+        threadnotesArticleId: documents.threadnotesArticleId,
+        highlightCount: sql<number>`count(${highlights.id})::int`,
+      })
+      .from(documents)
+      .leftJoin(highlights, eq(highlights.documentId, documents.id))
+      .where(eq(documents.userId, userId))
+      .groupBy(documents.id)
+      .orderBy(desc(documents.uploadedAt)),
+    db
+      .select({ id: folders.id, name: folders.name })
+      .from(folders)
+      .where(eq(folders.userId, userId))
+      .orderBy(asc(folders.name)),
+  ]);
+
+  // Relative times are worked out here, so the browser renders exactly
+  // what the server did.
+  const libraryDocs: LibraryDoc[] = docs.map((doc) => ({
+    id: doc.id,
+    title: doc.title,
+    folderId: doc.folderId,
+    fromThreadNotes: doc.threadnotesArticleId !== null,
+    highlightCount: doc.highlightCount,
+    uploadedAt: doc.uploadedAt.getTime(),
+    lastOpenedAt: doc.lastOpenedAt?.getTime() ?? null,
+    meta: [
+      doc.pageCount !== null && plural(doc.pageCount, "page"),
+      plural(doc.highlightCount, "highlight"),
+      doc.lastOpenedAt
+        ? `opened ${timeAgo(doc.lastOpenedAt)}`
+        : `added ${timeAgo(doc.uploadedAt)}`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  }));
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-6 py-14">
@@ -65,45 +94,7 @@ export default async function LibraryPage() {
           </p>
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {docs.map((doc) => {
-            const unopened = doc.lastOpenedAt === null;
-            const meta = [
-              doc.pageCount !== null && plural(doc.pageCount, "page"),
-              plural(doc.highlightCount, "highlight"),
-              doc.lastOpenedAt
-                ? `opened ${timeAgo(doc.lastOpenedAt)}`
-                : `added ${timeAgo(doc.uploadedAt)}`,
-            ].filter(Boolean);
-            return (
-              <li
-                key={doc.id}
-                className="fade-in group flex items-center rounded-xl border border-l-4 border-border bg-surface/30 shadow-sm transition-shadow hover:shadow-paper"
-                style={{
-                  borderLeftColor: unopened
-                    ? "var(--marker)"
-                    : "var(--accent-fill)",
-                }}
-              >
-                <Link
-                  href={`/read/${doc.id}`}
-                  className="flex min-w-0 flex-1 flex-col gap-1 px-5 py-4"
-                >
-                  {unopened && <span className="eyebrow">New</span>}
-                  <span className="truncate font-display text-lg font-semibold group-hover:text-accent">
-                    {doc.title}
-                  </span>
-                  <span className="text-sm text-secondary">
-                    {meta.join(" · ")}
-                  </span>
-                </Link>
-                <div className="pr-4">
-                  <DeleteDocumentButton documentId={doc.id} title={doc.title} />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <LibraryView docs={libraryDocs} folders={userFolders} />
       )}
     </div>
   );

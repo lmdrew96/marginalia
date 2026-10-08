@@ -11,6 +11,21 @@ import {
 import { sql } from "drizzle-orm";
 import type { OcrWord } from "@/lib/highlight-types";
 
+// Flat, user-named groups for the library. Deleting one unfiles its
+// documents (folder_id is set null).
+export const folders = pgTable(
+  "folders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [uniqueIndex("folders_user_name").on(t.userId, t.name)],
+);
+
 export const documents = pgTable(
   "documents",
   {
@@ -29,6 +44,10 @@ export const documents = pgTable(
     lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
     // The page the reader was on, so reopening picks up there.
     lastPage: integer("last_page"),
+    // Null means unfiled.
+    folderId: uuid("folder_id").references(() => folders.id, {
+      onDelete: "set null",
+    }),
     // Set when the document was opened from a ThreadNotes article; its
     // highlights are then saved to ThreadNotes as excerpts on that article.
     threadnotesArticleId: text("threadnotes_article_id"),
@@ -149,6 +168,7 @@ export const userSettings = pgTable("user_settings", {
     .defaultNow(),
 });
 
+export type Folder = typeof folders.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
 export type Highlight = typeof highlights.$inferSelect;
