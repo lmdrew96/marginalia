@@ -18,6 +18,7 @@ import { ocrPages } from "@/lib/ocr";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { PdfPage } from "@/components/PdfPage";
 import { FinishedReadingButton } from "@/components/FinishedReadingButton";
+import { ThreadNotesOrphans } from "@/components/ThreadNotesOrphans";
 import {
   BookmarkIcon,
   ChatIcon,
@@ -673,6 +674,20 @@ export function DocumentReader({
           )}
         </div>
       </div>
+
+      {fromThreadNotes && (
+        <ThreadNotesOrphans
+          documentId={documentId}
+          highlights={highlights}
+          onResolved={({ removed, updated }) =>
+            setHighlights((prev) =>
+              prev
+                .filter((h) => !removed.includes(h.id))
+                .map((h) => updated.find((u) => u.id === h.id) ?? h),
+            )
+          }
+        />
+      )}
 
       {(ocrError || actionError) && (
         <p className="pt-3 text-sm text-error">{ocrError ?? actionError}</p>

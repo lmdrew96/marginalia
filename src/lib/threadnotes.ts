@@ -90,6 +90,30 @@ export const getLibrary = async (
 ): Promise<ThreadNotesLibrary> =>
   (await call(apiKey, projectId ? { projectId } : {})) as ThreadNotesLibrary;
 
+export type ThreadNotesExcerpt = {
+  id: string;
+  quote: string;
+  comment: string | null;
+  page: number | null;
+};
+
+/**
+ * Every excerpt on an article. Throws unless ThreadNotes answers with an
+ * excerpts list, so a bad answer can't look like "all deleted".
+ */
+export const getArticleExcerpts = async (
+  apiKey: string,
+  articleId: string,
+): Promise<ThreadNotesExcerpt[]> => {
+  const body = (await call(apiKey, { articleId })) as {
+    excerpts?: unknown;
+  } | null;
+  if (!Array.isArray(body?.excerpts)) {
+    throw new ThreadNotesError("ThreadNotes didn't return an excerpts list", 502);
+  }
+  return body.excerpts as ThreadNotesExcerpt[];
+};
+
 /**
  * Saves a highlight as an excerpt and returns the excerpt's id. ThreadNotes
  * matches on the quote, so `duplicate` means it handed back an existing
