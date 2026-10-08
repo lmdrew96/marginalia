@@ -20,10 +20,12 @@ export function UploadDocument({
     "idle" | "uploading" | "converting" | "error"
   >("idle");
   const [error, setError] = useState<string | null>(null);
+  const [isWord, setIsWord] = useState(false);
 
   async function handleFile(file: File) {
     setStatus("uploading");
     setError(null);
+    setIsWord(/\.docx$/i.test(file.name));
     // Some browsers leave .docx files without a type; the server checks
     // the extension and type agree, so fill it in.
     const contentType =
@@ -98,7 +100,9 @@ export function UploadDocument({
       </button>
       {status === "converting" && (
         <p className="fade-in text-xs text-secondary">
-          Extracting text and images — this can take a bit for longer PDFs.
+          {isWord
+            ? "Turning your Word file into a PDF — the first one in a while can take up to half a minute."
+            : "Reading the text — this can take a bit for longer PDFs."}
         </p>
       )}
       {error && <p className="text-sm text-error">{error}</p>}
