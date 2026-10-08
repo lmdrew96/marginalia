@@ -57,6 +57,42 @@ export function getTextBetweenOffsets(
   return text;
 }
 
+const WORD_CHAR = /[\p{L}\p{N}'’]/u;
+
+/**
+ * Widens [start, end) so neither edge cuts through a word. The pdf.js text
+ * layer is drawn in a fallback font that doesn't line up with the visible
+ * glyphs, so a drag that starts on a word's first letter (or a wide "fl"
+ * ligature) can land after it. A <br> ends a word even with no space
+ * around it, so snapping never reaches into the line above or below.
+ */
+export function snapToWords(
+  root: Node,
+  start: number,
+  end: number,
+): { start: number; end: number } {
+  const walker = document.createTreeWalker(
+    root,
+    NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+  );
+  let text = "";
+  const lineBreaks = new Set<number>();
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (node.nodeType === Node.TEXT_NODE) text += node.textContent ?? "";
+    else if (node.nodeName === "BR") lineBreaks.add(text.length);
+  }
+  // Is offset i between two letters of the same word?
+  const insideWord = (i: number): boolean =>
+    i > 0 &&
+    i < text.length &&
+    !lineBreaks.has(i) &&
+    WORD_CHAR.test(text[i - 1]) &&
+    WORD_CHAR.test(text[i]);
+  while (insideWord(start)) start--;
+  while (insideWord(end)) end++;
+  return { start, end };
+}
+
 export function findRangeForOffsets(
   root: Node,
   start: number,

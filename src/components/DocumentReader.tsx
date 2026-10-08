@@ -9,7 +9,11 @@ import {
   type HighlightColor,
   type OcrWord,
 } from "@/lib/highlight-types";
-import { getOffsetInRoot, getTextBetweenOffsets } from "@/lib/dom-offset";
+import {
+  getOffsetInRoot,
+  getTextBetweenOffsets,
+  snapToWords,
+} from "@/lib/dom-offset";
 import { ocrPages } from "@/lib/ocr";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { PdfPage } from "@/components/PdfPage";
@@ -307,8 +311,11 @@ export function DocumentReader({
 
     // A selection that runs onto the next page is cut at the end of the
     // page it started on — a highlight belongs to exactly one page.
-    const start = getOffsetInRoot(layer, range.startContainer, range.startOffset);
-    const end = getOffsetInRoot(layer, range.endContainer, range.endOffset);
+    const { start, end } = snapToWords(
+      layer,
+      getOffsetInRoot(layer, range.startContainer, range.startOffset),
+      getOffsetInRoot(layer, range.endContainer, range.endOffset),
+    );
     const text = getTextBetweenOffsets(layer, start, end)
       .replace(/\s+/g, " ")
       .trim();
