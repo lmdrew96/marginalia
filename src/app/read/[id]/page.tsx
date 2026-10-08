@@ -59,11 +59,11 @@ export default async function ReadPage({
     <div className="flex flex-1 flex-col">
       <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 px-6 pt-5 pb-1">
         <Link
-          href="/library"
+          href={doc.threadnotesArticleId ? "/threadnotes" : "/library"}
           className="flex items-center gap-1.5 justify-self-start rounded-full px-2.5 py-1 text-sm text-secondary transition-colors hover:bg-surface hover:text-on-surface"
         >
           <ArrowLeftIcon className="h-4 w-4" />
-          Library
+          {doc.threadnotesArticleId ? "ThreadNotes" : "Library"}
         </Link>
         <h1 className="max-w-[50vw] truncate text-center font-display text-lg font-semibold tracking-tight">
           {doc.title}

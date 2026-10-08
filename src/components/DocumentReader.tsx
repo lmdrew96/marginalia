@@ -626,14 +626,13 @@ export function DocumentReader({
             <button
               onClick={() => setNotesCollapsed((v) => !v)}
               aria-pressed={!notesCollapsed}
-              title={notesCollapsed ? "Show margin notes" : "Hide margin notes"}
+              aria-label={`${notesCollapsed ? "Show" : "Hide"} margin notes (${commentCount})`}
+              title={`${notesCollapsed ? "Show" : "Hide"} margin notes (${commentCount})`}
               className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-background/60"
             >
               <MarginIcon className="h-4 w-4" />
-              <span className="tabular-nums">{commentCount}</span>
-              <span className="sr-only">
-                {notesCollapsed ? "Show margin notes" : "Hide margin notes"}
-              </span>
+              Notes
+              <span className="tabular-nums">({commentCount})</span>
             </button>
           )}
 
