@@ -27,6 +27,8 @@ export const documents = pgTable(
     // until the reader opens them once and reports it.
     pageCount: integer("page_count"),
     lastOpenedAt: timestamp("last_opened_at", { withTimezone: true }),
+    // The page the reader was on, so reopening picks up there.
+    lastPage: integer("last_page"),
     // Set when the document was opened from a ThreadNotes article; its
     // highlights are then saved to ThreadNotes as excerpts on that article.
     threadnotesArticleId: text("threadnotes_article_id"),

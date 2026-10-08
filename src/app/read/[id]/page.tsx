@@ -87,6 +87,8 @@ export default async function ReadPage({
         initialChatMessages={docChatMessages}
         initialOcrPages={ocrPages}
         reportPageCount={doc.pageCount === null}
+        initialPage={doc.lastPage}
+        fromThreadNotes={doc.threadnotesArticleId !== null}
       />
     </div>
   );

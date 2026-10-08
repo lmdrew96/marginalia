@@ -17,6 +17,7 @@ import {
 import { ocrPages } from "@/lib/ocr";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { PdfPage } from "@/components/PdfPage";
+import { FinishedReadingButton } from "@/components/FinishedReadingButton";
 import {
   BookmarkIcon,
   ChatIcon,
@@ -50,6 +51,8 @@ export function DocumentReader({
   initialChatMessages,
   initialOcrPages,
   reportPageCount,
+  initialPage,
+  fromThreadNotes,
 }: {
   documentId: string;
   fileUrl: string;
@@ -60,6 +63,10 @@ export function DocumentReader({
   // True for documents stored before page counts were; the reader reports
   // it once so the library card can show it.
   reportPageCount: boolean;
+  // The page the reader was last on; reopening scrolls back to it.
+  initialPage: number | null;
+  // Opened from a ThreadNotes paper: shows the "Finished reading" button.
+  fromThreadNotes: boolean;
 }) {
   const columnRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -98,6 +105,9 @@ export function DocumentReader({
   const [notesCollapsed, setNotesCollapsed] = useState(false);
   const notesBeforeChatRef = useRef(false);
   const [currentPage, setCurrentPage] = useState(1);
+  // Set once the reader is back on initialPage; until then currentPage is
+  // just the top of the document and mustn't be saved over it.
+  const resumedRef = useRef(false);
   // The chat sidebar sticks just below the toolbar, which can wrap onto
   // more lines on narrow windows.
   const [toolbarHeight, setToolbarHeight] = useState(0);
@@ -262,6 +272,34 @@ export function DocumentReader({
       window.removeEventListener("resize", schedule);
     };
   }, [pageSizes.length, scale]);
+
+  // Reopen where the reader left off, once the pages are laid out at their
+  // real size.
+  useLayoutEffect(() => {
+    if (resumedRef.current || pageSizes.length === 0 || columnWidth === 0) {
+      return;
+    }
+    const page = Math.min(initialPage ?? 1, pageSizes.length);
+    const el = page > 1 ? pageElement(page) : null;
+    if (el) window.scrollBy(0, el.getBoundingClientRect().top - toolbarBottom());
+    resumedRef.current = true;
+  }, [pageSizes.length, columnWidth, initialPage]);
+
+  useEffect(() => {
+    if (!resumedRef.current) return;
+    const timer = setTimeout(() => {
+      fetch(`/api/documents/${documentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lastPage: currentPage }),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`status ${res.status}`);
+        })
+        .catch((err) => console.error("Saving reading position failed:", err));
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [currentPage, documentId]);
 
   const zoomTo = (next: number | null) => {
     const top = topVisiblePage();
@@ -615,6 +653,13 @@ export function DocumentReader({
             )}
             {chatOpen ? "Close chat" : "Ask Claude"}
           </button>
+
+          {fromThreadNotes && (
+            <FinishedReadingButton
+              documentId={documentId}
+              onError={setActionError}
+            />
+          )}
 
           {(pendingOcrPages.length > 0 || ocrProgress) && (
             <button

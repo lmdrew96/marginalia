@@ -95,8 +95,12 @@ export async function DELETE(
   return NextResponse.json({ ok: true });
 }
 
-// The reader reports the page count for documents ingested before it was
-// stored. Only fills a missing value; ingest sets it for new documents.
+const isPage = (n: unknown): n is number =>
+  Number.isInteger(n) && (n as number) >= 1;
+
+// The reader reports the page it's on (lastPage), and the page count for
+// documents ingested before it was stored (pageCount). pageCount only fills
+// a missing value; ingest sets it for new documents.
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -112,14 +116,26 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { pageCount } = await req.json().catch(() => ({}));
-  if (!Number.isInteger(pageCount) || pageCount < 1) {
+  const { pageCount, lastPage } = await req.json().catch(() => ({}));
+  if (pageCount === undefined && lastPage === undefined) {
     return NextResponse.json(
-      { error: "pageCount must be a positive integer" },
+      { error: "Send pageCount or lastPage" },
       { status: 400 },
     );
   }
-  if (doc.pageCount === null) {
+  if (
+    (pageCount !== undefined && !isPage(pageCount)) ||
+    (lastPage !== undefined && !isPage(lastPage))
+  ) {
+    return NextResponse.json(
+      { error: "pageCount and lastPage must be positive integers" },
+      { status: 400 },
+    );
+  }
+  if (lastPage !== undefined) {
+    await db.update(documents).set({ lastPage }).where(eq(documents.id, id));
+  }
+  if (pageCount !== undefined && doc.pageCount === null) {
     await db
       .update(documents)
       .set({ pageCount })
