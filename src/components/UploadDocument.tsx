@@ -95,7 +95,9 @@ export function UploadDocument({
         {status === "uploading"
           ? "Uploading…"
           : status === "converting"
-            ? "Converting…"
+            ? isWord
+              ? "Converting…"
+              : "Reading…"
             : label}
       </button>
       {status === "converting" && (
