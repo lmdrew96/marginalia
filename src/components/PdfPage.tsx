@@ -35,26 +35,53 @@ const measureTextWidth = (text: string, fontSize: number): number => {
 
 /**
  * One line of a highlight comes back from getClientRects() as several
- * boxes (one per pdf.js span). Overlapping translucent boxes stack darker,
- * so merge boxes that sit on the same line and touch.
+ * boxes (one per pdf.js span, at slightly different heights), and the
+ * boxes of neighbouring lines can overlap. Translucent boxes stack darker
+ * wherever they overlap, so: group the boxes into lines, merge each line
+ * left to right into one band, and split any overlap between lines down
+ * the middle.
  */
 const mergeLineRects = (rects: Rect[]): Rect[] => {
-  const sorted = [...rects].sort((a, b) => a.y - b.y || a.x - b.x);
-  const merged: Rect[] = [];
-  for (const r of sorted) {
-    const last = merged[merged.length - 1];
-    const sameLine =
-      last && Math.abs(last.y - r.y) < Math.min(last.h, r.h) * 0.5;
-    if (sameLine && r.x <= last.x + last.w + 0.005) {
-      const right = Math.max(last.x + last.w, r.x + r.w);
-      const top = Math.min(last.y, r.y);
-      const bottom = Math.max(last.y + last.h, r.y + r.h);
-      last.x = Math.min(last.x, r.x);
-      last.w = right - last.x;
-      last.y = top;
-      last.h = bottom - top;
+  const center = (r: Rect) => r.y + r.h / 2;
+  const lines: { top: number; bottom: number; rects: Rect[] }[] = [];
+  for (const r of [...rects].sort((a, b) => center(a) - center(b))) {
+    const line = lines[lines.length - 1];
+    if (line && center(r) <= line.bottom) {
+      line.top = Math.min(line.top, r.y);
+      line.bottom = Math.max(line.bottom, r.y + r.h);
+      line.rects.push(r);
     } else {
-      merged.push({ ...r });
+      lines.push({ top: r.y, bottom: r.y + r.h, rects: [r] });
+    }
+  }
+  for (let i = 1; i < lines.length; i++) {
+    const above = lines[i - 1];
+    const below = lines[i];
+    if (above.bottom > below.top) {
+      const middle = (above.bottom + below.top) / 2;
+      above.bottom = middle;
+      below.top = middle;
+    }
+  }
+
+  const merged: Rect[] = [];
+  for (const line of lines) {
+    const runs: { left: number; right: number }[] = [];
+    for (const r of [...line.rects].sort((a, b) => a.x - b.x)) {
+      const last = runs[runs.length - 1];
+      if (last && r.x <= last.right + 0.005) {
+        last.right = Math.max(last.right, r.x + r.w);
+      } else {
+        runs.push({ left: r.x, right: r.x + r.w });
+      }
+    }
+    for (const run of runs) {
+      merged.push({
+        x: run.left,
+        y: line.top,
+        w: run.right - run.left,
+        h: line.bottom - line.top,
+      });
     }
   }
   return merged;
