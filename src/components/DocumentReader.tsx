@@ -68,6 +68,7 @@ export function DocumentReader({
   initialOcrPages,
   reportPageCount,
   initialPage,
+  initialFocus,
   fromThreadNotes,
 }: {
   documentId: string;
@@ -81,6 +82,8 @@ export function DocumentReader({
   reportPageCount: boolean;
   // The page the reader was last on; reopening scrolls back to it.
   initialPage: number | null;
+  // A highlight to open at instead, outlined (a link to it from ThreadNotes).
+  initialFocus: { id: string; page: number } | null;
   // Opened from a ThreadNotes paper: shows the "Finished reading" button.
   fromThreadNotes: boolean;
 }) {
@@ -127,7 +130,9 @@ export function DocumentReader({
   // A page change still waiting out the save debounce.
   const unsavedPageRef = useRef<number | null>(null);
   // The highlight just jumped to, outlined for a moment.
-  const [focused, setFocused] = useState<{ id: string; page: number } | null>(null);
+  const [focused, setFocused] = useState<{ id: string; page: number } | null>(
+    initialFocus,
+  );
   // The chat sidebar sticks just below the toolbar, which can wrap onto
   // more lines on narrow windows.
   const [toolbarHeight, setToolbarHeight] = useState(0);
@@ -299,11 +304,11 @@ export function DocumentReader({
     if (resumedRef.current || pageSizes.length === 0 || columnWidth === 0) {
       return;
     }
-    const page = Math.min(initialPage ?? 1, pageSizes.length);
+    const page = Math.min(initialFocus?.page ?? initialPage ?? 1, pageSizes.length);
     const el = page > 1 ? pageElement(page) : null;
     if (el) window.scrollBy(0, el.getBoundingClientRect().top - toolbarBottom());
     resumedRef.current = true;
-  }, [pageSizes.length, columnWidth, initialPage]);
+  }, [pageSizes.length, columnWidth, initialPage, initialFocus?.page]);
 
   useEffect(() => {
     if (!resumedRef.current) return;
@@ -331,11 +336,12 @@ export function DocumentReader({
     };
   }, [documentId]);
 
+  // The outline fades once the pages are there to show it.
   useEffect(() => {
-    if (!focused) return;
+    if (!focused || pageSizes.length === 0) return;
     const timer = setTimeout(() => setFocused(null), FOCUS_MS);
     return () => clearTimeout(timer);
-  }, [focused]);
+  }, [focused, pageSizes.length]);
 
   const zoomTo = (next: number | null) => {
     const top = topVisiblePage();

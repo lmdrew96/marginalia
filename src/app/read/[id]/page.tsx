@@ -17,8 +17,11 @@ import { ArrowLeftIcon } from "@/components/icons";
 
 export default async function ReadPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  // ?highlight=<id> opens at that highlight (links from ThreadNotes excerpts).
+  searchParams: Promise<{ highlight?: string | string[] }>;
 }) {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
@@ -54,6 +57,8 @@ export default async function ReadPage({
         .where(eq(documents.id, id)),
     ]);
   const docChatMessages = recentChat.reverse();
+  const { highlight: highlightParam } = await searchParams;
+  const focusHighlight = docHighlights.find((h) => h.id === highlightParam) ?? null;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -88,6 +93,9 @@ export default async function ReadPage({
         initialOcrPages={ocrPages}
         reportPageCount={doc.pageCount === null}
         initialPage={doc.lastPage}
+        initialFocus={
+          focusHighlight && { id: focusHighlight.id, page: focusHighlight.pageNumber }
+        }
         fromThreadNotes={doc.threadnotesArticleId !== null}
       />
     </div>
