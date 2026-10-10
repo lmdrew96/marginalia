@@ -64,8 +64,10 @@ export async function DELETE(
         { status: 409 },
       );
     }
+    // One at a time: ThreadNotes rewrites the same blob for each delete, so
+    // parallel deletes collide and some come back 409.
     try {
-      await Promise.all(synced.map((h) => deleteExcerpt(apiKey, h.excerptId!)));
+      for (const h of synced) await deleteExcerpt(apiKey, h.excerptId!);
     } catch (err) {
       console.error(`Deleting ThreadNotes excerpts for document ${id} failed:`, err);
       return NextResponse.json(
