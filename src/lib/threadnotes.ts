@@ -126,7 +126,8 @@ export const createExcerpt = async (
 ): Promise<{ excerptId: string; duplicate: boolean }> => {
   const body = (await call(apiKey, { projectId }, {
     method: "POST",
-    body: excerpt,
+    // `client` labels the excerpt card "Marginalia · p. N"; any other value is a 400.
+    body: { ...excerpt, client: "marginalia" },
   })) as { excerptId?: string; duplicate?: boolean; error?: string } | null;
   // ThreadNotes answers 200 with an `error` (and an empty excerptId) when it
   // can't place the excerpt, e.g. the article isn't in that project.
