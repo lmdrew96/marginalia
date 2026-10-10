@@ -3,6 +3,7 @@ import {
   uuid,
   text,
   integer,
+  boolean,
   timestamp,
   jsonb,
   uniqueIndex,
@@ -78,6 +79,11 @@ export const highlights = pgTable("highlights", {
   // The ThreadNotes excerpt this highlight is saved as. Null when the
   // document isn't from ThreadNotes, or saving it there failed.
   threadnotesExcerptId: text("threadnotes_excerpt_id"),
+  // True while the margin note has changes ThreadNotes didn't get. Reopening
+  // the paper pushes it instead of pulling the excerpt's comment over it.
+  threadnotesCommentDirty: boolean("threadnotes_comment_dirty")
+    .notNull()
+    .default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

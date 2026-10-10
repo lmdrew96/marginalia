@@ -358,11 +358,32 @@ export const resolveArticle = async (
 };
 
 /**
+ * Records whether the highlight's margin note still has to reach
+ * ThreadNotes. Returns the stored row, or the highlight as given if it
+ * couldn't be updated.
+ */
+const setCommentDirty = async (highlight: Highlight, dirty: boolean): Promise<Highlight> => {
+  if (highlight.threadnotesCommentDirty === dirty) return highlight;
+  try {
+    const [row] = await db
+      .update(highlights)
+      .set({ threadnotesCommentDirty: dirty })
+      .where(eq(highlights.id, highlight.id))
+      .returning();
+    return row ?? highlight;
+  } catch (err) {
+    console.error(`Marking highlight ${highlight.id}'s note dirty=${dirty} failed:`, err);
+    return highlight;
+  }
+};
+
+/**
  * Saves a highlight on a ThreadNotes-linked document as an excerpt on its
  * article: creates the excerpt the first time (or when an earlier attempt
  * failed), updates its comment after that. The highlight itself is already
  * saved, so a ThreadNotes failure comes back as an error to show, not a
- * thrown one.
+ * thrown one, and marks the note dirty so reopening the paper retries it
+ * instead of pulling the older excerpt comment over it.
  */
 export const saveHighlightAsExcerpt = async (
   userId: string,
@@ -373,7 +394,7 @@ export const saveHighlightAsExcerpt = async (
   const { apiKey } = await getThreadNotesSettings(userId);
   if (!apiKey) {
     return {
-      highlight,
+      highlight: await setCommentDirty(highlight, true),
       threadnotesError: "Saved here, but not to ThreadNotes: connect it in Settings.",
     };
   }
@@ -382,7 +403,7 @@ export const saveHighlightAsExcerpt = async (
       await updateExcerpt(apiKey, highlight.threadnotesExcerptId, {
         comment: highlight.comment ?? "",
       });
-      return { highlight };
+      return { highlight: await setCommentDirty(highlight, false) };
     }
     const { excerptId, duplicate } = await createExcerpt(apiKey, doc.threadnotesProjectId, {
       quote: highlight.textContent,
@@ -412,7 +433,7 @@ export const saveHighlightAsExcerpt = async (
     try {
       [linked] = await db
         .update(highlights)
-        .set({ threadnotesExcerptId: excerptId })
+        .set({ threadnotesExcerptId: excerptId, threadnotesCommentDirty: false })
         .where(eq(highlights.id, highlight.id))
         .returning();
     } catch (err) {
@@ -427,7 +448,7 @@ export const saveHighlightAsExcerpt = async (
   } catch (err) {
     console.error(`Saving highlight ${highlight.id} to ThreadNotes failed:`, err);
     return {
-      highlight,
+      highlight: await setCommentDirty(highlight, true),
       threadnotesError: "Saved here, but ThreadNotes didn't get it. Add or edit its note to retry.",
     };
   }

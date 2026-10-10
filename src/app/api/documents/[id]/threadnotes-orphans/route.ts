@@ -79,15 +79,32 @@ const findOrphans = ({ excerpts, synced }: SyncState): Highlight[] =>
   synced.filter((h) => !excerpts.has(h.threadnotesExcerptId!));
 
 /**
+ * Retries margin notes whose last push to ThreadNotes failed, one at a time
+ * (ThreadNotes rewrites the same blob for each). A note that fails again
+ * stays dirty for the next open.
+ */
+const pushDirtyComments = async (
+  linked: Linked,
+  { excerpts, synced }: SyncState,
+): Promise<void> => {
+  for (const h of synced) {
+    if (!h.threadnotesCommentDirty || !excerpts.has(h.threadnotesExcerptId!)) continue;
+    await saveHighlightAsExcerpt(linked.userId, linked.doc, h);
+  }
+};
+
+/**
  * Copies excerpt comments edited in ThreadNotes onto their highlights.
- * ThreadNotes wins: Marginalia pushes every margin-note save, so the two
- * only differ after an edit made there. Page edits aren't pulled — a
- * highlight's offsets belong to its page, so moving it would misplace it.
+ * ThreadNotes wins over a clean note: Marginalia pushes every margin-note
+ * save, so the two only differ after an edit made there. A dirty note
+ * (its push failed) is newer than the excerpt, so it's pushed, not pulled
+ * over. Page edits aren't pulled — a highlight's offsets belong to its
+ * page, so moving it would misplace it.
  */
 const pullComments = async ({ excerpts, synced }: SyncState): Promise<Highlight[]> => {
   const stale = synced.flatMap((h) => {
     const excerpt = excerpts.get(h.threadnotesExcerptId!);
-    if (!excerpt) return [];
+    if (!excerpt || h.threadnotesCommentDirty) return [];
     const comment = excerpt.comment?.trim() || null;
     return comment === (h.comment?.trim() || null) ? [] : [{ id: h.id, comment }];
   });
@@ -112,6 +129,11 @@ export async function GET(
   const state = await loadSyncState(linked);
   if (!state) return NextResponse.json({ highlightIds: [], updated: [] });
   let updated: Highlight[] = [];
+  try {
+    await pushDirtyComments(linked, state);
+  } catch (err) {
+    console.error(`Pushing dirty notes on document ${linked.doc.id} to ThreadNotes failed:`, err);
+  }
   try {
     updated = await pullComments(state);
   } catch (err) {
