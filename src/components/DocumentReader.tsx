@@ -43,6 +43,21 @@ const COLUMN_PADDING_PX = 32;
 // readable; commented highlights still show their marker.
 const MARGIN_GUTTER_PX = 240;
 const MIN_COLUMN_FOR_MARGIN_PX = 640;
+// How long a highlight stays outlined after jumping to it.
+const FOCUS_MS = 4000;
+
+const saveLastPage = (documentId: string, lastPage: number, keepalive = false): void => {
+  fetch(`/api/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lastPage }),
+    keepalive,
+  })
+    .then((res) => {
+      if (!res.ok) throw new Error(`status ${res.status}`);
+    })
+    .catch((err) => console.error("Saving reading position failed:", err));
+};
 
 export function DocumentReader({
   documentId,
@@ -109,6 +124,10 @@ export function DocumentReader({
   // Set once the reader is back on initialPage; until then currentPage is
   // just the top of the document and mustn't be saved over it.
   const resumedRef = useRef(false);
+  // A page change still waiting out the save debounce.
+  const unsavedPageRef = useRef<number | null>(null);
+  // The highlight just jumped to, outlined for a moment.
+  const [focused, setFocused] = useState<{ id: string; page: number } | null>(null);
   // The chat sidebar sticks just below the toolbar, which can wrap onto
   // more lines on narrow windows.
   const [toolbarHeight, setToolbarHeight] = useState(0);
@@ -288,19 +307,35 @@ export function DocumentReader({
 
   useEffect(() => {
     if (!resumedRef.current) return;
+    unsavedPageRef.current = currentPage;
     const timer = setTimeout(() => {
-      fetch(`/api/documents/${documentId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lastPage: currentPage }),
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(`status ${res.status}`);
-        })
-        .catch((err) => console.error("Saving reading position failed:", err));
+      unsavedPageRef.current = null;
+      saveLastPage(documentId, currentPage);
     }, 1500);
     return () => clearTimeout(timer);
   }, [currentPage, documentId]);
+
+  // Leaving within the debounce (back link, closing the tab) would drop the
+  // last page change, so save it on the way out.
+  useEffect(() => {
+    const flush = () => {
+      const page = unsavedPageRef.current;
+      if (page === null) return;
+      unsavedPageRef.current = null;
+      saveLastPage(documentId, page, true);
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [documentId]);
+
+  useEffect(() => {
+    if (!focused) return;
+    const timer = setTimeout(() => setFocused(null), FOCUS_MS);
+    return () => clearTimeout(timer);
+  }, [focused]);
 
   const zoomTo = (next: number | null) => {
     const top = topVisiblePage();
@@ -496,6 +531,13 @@ export function DocumentReader({
     }
   }
 
+  /** Jumps to a highlight's page; that page then scrolls it into view. */
+  function focusHighlight(highlight: Highlight) {
+    const el = pageElement(highlight.pageNumber);
+    if (el) window.scrollBy(0, el.getBoundingClientRect().top - toolbarBottom());
+    setFocused({ id: highlight.id, page: highlight.pageNumber });
+  }
+
   function scrollToPage(pageNumber: number) {
     const el = pageElement(pageNumber);
     if (!el) return;
@@ -679,6 +721,8 @@ export function DocumentReader({
         <ThreadNotesOrphans
           documentId={documentId}
           highlights={highlights}
+          onShow={focusHighlight}
+          stickyTop={toolbarHeight}
           onResolved={({ removed, updated }) =>
             setHighlights((prev) =>
               prev
@@ -719,6 +763,7 @@ export function DocumentReader({
                 onHighlightColorChange={changeHighlightColor}
                 onHighlightCommentChange={changeHighlightComment}
                 onHighlightDelete={deleteHighlight}
+                focusedHighlightId={focused?.page === i + 1 ? focused.id : null}
               />
             ))
           )}

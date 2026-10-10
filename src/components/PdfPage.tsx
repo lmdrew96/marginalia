@@ -100,6 +100,7 @@ export function PdfPage({
   onHighlightColorChange,
   onHighlightCommentChange,
   onHighlightDelete,
+  focusedHighlightId,
 }: {
   pdf: PDFDocumentProxy;
   pdfjs: PdfJs;
@@ -118,6 +119,8 @@ export function PdfPage({
     comment: string | null,
   ) => Promise<boolean>;
   onHighlightDelete: (id: string) => void;
+  // A highlight on this page to scroll to and outline (e.g. from a link).
+  focusedHighlightId: string | null;
 }) {
   const pageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -275,6 +278,25 @@ export function PdfPage({
     setRects(next);
   }, [highlights, layerVersion, ocrWords, visible, scale]);
 
+  // Brings the focused highlight a third of the way down the window once its
+  // boxes are measured (the page may only just have rendered). Once per focus.
+  const scrolledToRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusedHighlightId) {
+      scrolledToRef.current = null;
+      return;
+    }
+    const first = rects[focusedHighlightId]?.[0];
+    const page = pageRef.current;
+    if (!first || !page || scrolledToRef.current === focusedHighlightId) return;
+    scrolledToRef.current = focusedHighlightId;
+    const box = page.getBoundingClientRect();
+    window.scrollTo({
+      top: window.scrollY + box.top + first.y * box.height - window.innerHeight / 3,
+      behavior: "smooth",
+    });
+  }, [focusedHighlightId, rects]);
+
   // Highlight boxes sit under the text layer (so text stays selectable on
   // top of them) — clicks are matched to a highlight by position instead.
   const highlightAt = (e: React.MouseEvent<HTMLDivElement>): string | null => {
@@ -383,9 +405,11 @@ export function PdfPage({
                     HIGHLIGHT_COLOR_STYLES[h.color as HighlightColor] ??
                     HIGHLIGHT_COLOR_STYLES.yellow,
                   outline:
-                    hoverId === h.id || menu?.id === h.id
-                      ? "1px solid rgba(0, 0, 0, 0.35)"
-                      : "none",
+                    focusedHighlightId === h.id
+                      ? "2px solid rgba(0, 0, 0, 0.6)"
+                      : hoverId === h.id || menu?.id === h.id
+                        ? "1px solid rgba(0, 0, 0, 0.35)"
+                        : "none",
                 }}
               />
             )),

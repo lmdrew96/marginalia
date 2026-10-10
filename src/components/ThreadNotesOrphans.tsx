@@ -17,16 +17,23 @@ const snippet = (text: string): string =>
 
 /**
  * A quiet banner when highlights on this paper lost their excerpt in
- * ThreadNotes, with a review list to re-add, keep, or remove each one.
+ * ThreadNotes, with a review list to show, re-add, keep, or remove each one.
  * Dismissing changes nothing; it comes back the next time the paper opens.
  */
 export const ThreadNotesOrphans = ({
   documentId,
   highlights,
+  onShow,
+  stickyTop,
   onResolved,
 }: {
   documentId: string;
   highlights: Highlight[];
+  // Scrolls the reader to a highlight, so the reader can see which one it is.
+  onShow: (highlight: Highlight) => void;
+  // Sticks just below the reader's toolbar, so it stays in reach anywhere in
+  // the paper.
+  stickyTop: number;
   onResolved: (result: { removed: string[]; updated: Highlight[] }) => void;
 }): React.JSX.Element | null => {
   const [orphanIds, setOrphanIds] = useState<string[]>([]);
@@ -105,7 +112,8 @@ export const ThreadNotesOrphans = ({
   return (
     <div
       role="status"
-      className="fade-in mt-3 w-full max-w-xl rounded-xl border border-border bg-surface/90 px-4 py-2.5 text-sm text-on-surface shadow-paper"
+      className="fade-in sticky z-10 mt-3 w-full max-w-xl rounded-xl border border-border bg-surface/90 px-4 py-2.5 text-sm text-on-surface shadow-paper backdrop-blur-sm"
+      style={{ top: stickyTop }}
     >
       <div className="flex items-center gap-3">
         <p className="flex-1">
@@ -136,14 +144,22 @@ export const ThreadNotesOrphans = ({
             &ldquo;Keep here only&rdquo; leaves the highlight in Marginalia; later
             edits to it won&apos;t go to ThreadNotes.
           </p>
-          <ul className="flex flex-col gap-2">
+          <ul className="flex max-h-[40vh] flex-col gap-2 overflow-y-auto">
             {orphans.map((h) => (
               <li key={h.id} className="flex flex-col gap-1">
                 <span>
                   <span className="text-on-surface-secondary">p. {h.pageNumber} · </span>
                   &ldquo;{snippet(h.textContent)}&rdquo;
                 </span>
-                <div className="flex flex-wrap gap-1">{buttons([h.id])}</div>
+                <div className="flex flex-wrap gap-1">
+                  <button
+                    onClick={() => onShow(h)}
+                    className="rounded-full px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-background/60"
+                  >
+                    Show
+                  </button>
+                  {buttons([h.id])}
+                </div>
               </li>
             ))}
           </ul>
