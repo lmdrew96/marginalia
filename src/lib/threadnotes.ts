@@ -36,9 +36,17 @@ export type ThreadNotesProject = {
   active: boolean;
 };
 
+// A research question in the project, offered as a connection target.
+export type ThreadNotesQuestion = {
+  id: string;
+  q: string;
+  theme: string;
+};
+
 export type ThreadNotesLibrary = {
   project: { id: string; name: string };
   articles: ThreadNotesArticle[];
+  questions: ThreadNotesQuestion[];
   projects: ThreadNotesProject[];
 };
 
@@ -155,6 +163,41 @@ export const deleteExcerpt = async (
     if (err instanceof ThreadNotesError && err.status === 404) return;
     throw err;
   }
+};
+
+export const CONNECTION_RELATIONS = [
+  "connects_to",
+  "tension_with",
+  "instance_of",
+  "contradicts",
+  "evidenced_by",
+] as const;
+export type ConnectionRelation = (typeof CONNECTION_RELATIONS)[number];
+
+// The targets Marginalia offers; ThreadNotes accepts a few more.
+export type ConnectionTarget = "question" | "article";
+
+/**
+ * Adds a "because" connection from an excerpt to a question or article in
+ * its project. An identical connection already there comes back with
+ * created: false; questionStarted means a Not-started question moved to
+ * Exploring.
+ */
+export const connectExcerpt = async (
+  apiKey: string,
+  connection: {
+    excerptId: string;
+    toType: ConnectionTarget;
+    toId: string;
+    relation: ConnectionRelation;
+    because: string;
+  },
+): Promise<{ created: boolean; questionStarted: boolean }> => {
+  const body = (await call(apiKey, { action: "connect" }, {
+    method: "POST",
+    body: connection,
+  })) as { created?: boolean; questionStarted?: boolean } | null;
+  return { created: body?.created !== false, questionStarted: body?.questionStarted === true };
 };
 
 export const setArticleStatus = async (

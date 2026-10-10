@@ -12,6 +12,7 @@ import {
 import { findRangeForOffsets } from "@/lib/dom-offset";
 import { ChatIcon } from "@/components/icons";
 import { MarginNotes, type MarginNote } from "@/components/MarginNotes";
+import { ConnectExcerpt } from "@/components/ConnectExcerpt";
 
 type PdfJs = typeof import("pdfjs-dist");
 
@@ -139,7 +140,9 @@ export function PdfPage({
     id: string;
     x: number;
     y: number;
-    editing: boolean;
+    // The color/remove row, the comment editor, or the ThreadNotes
+    // connection form.
+    mode: "options" | "comment" | "connect";
   } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
@@ -325,7 +328,7 @@ export function PdfPage({
       id,
       x: (e.clientX - box.left) / box.width,
       y: (e.clientY - box.top) / box.height,
-      editing: false,
+      mode: "options",
     });
   };
 
@@ -335,7 +338,7 @@ export function PdfPage({
     const last = rects[id]?.at(-1);
     if (!highlight || !last) return;
     setDraft(highlight.comment ?? "");
-    setMenu({ id, x: last.x + last.w / 2, y: last.y + last.h, editing: true });
+    setMenu({ id, x: last.x + last.w / 2, y: last.y + last.h, mode: "comment" });
   };
 
   const saveComment = async (id: string, comment: string | null) => {
@@ -462,7 +465,7 @@ export function PdfPage({
           visible && <div ref={textLayerRef} className="textLayer" />
         )}
 
-        {menu && menuHighlight && menu.editing && (
+        {menu && menuHighlight && menu.mode === "comment" && (
           <div
             ref={menuRef}
             role="dialog"
@@ -496,6 +499,17 @@ export function PdfPage({
                   Delete comment
                 </button>
               )}
+              {/* Hidden while the note has unsaved edits, so switching
+                  forms can't drop them. */}
+              {menuHighlight.threadnotesExcerptId &&
+                draft === (menuHighlight.comment ?? "") && (
+                <button
+                  onClick={() => setMenu({ ...menu, mode: "connect" })}
+                  className="rounded-md px-2 py-1 text-sm hover:bg-surface"
+                >
+                  Connect…
+                </button>
+              )}
               <span className="flex-1" />
               <button
                 onClick={() => setMenu(null)}
@@ -514,7 +528,20 @@ export function PdfPage({
           </div>
         )}
 
-        {menu && menuHighlight && !menu.editing && (
+        {menu && menuHighlight && menu.mode === "connect" && (
+          <div
+            ref={menuRef}
+            role="dialog"
+            aria-label="Connect in ThreadNotes"
+            data-no-highlight
+            className="fade-in absolute z-[3] w-80 -translate-x-1/2 translate-y-2 rounded-xl border border-border bg-background p-2.5 shadow-paper"
+            style={{ left: `${menu.x * 100}%`, top: `${menu.y * 100}%` }}
+          >
+            <ConnectExcerpt highlightId={menuHighlight.id} onClose={() => setMenu(null)} />
+          </div>
+        )}
+
+        {menu && menuHighlight && menu.mode === "options" && (
           <div
             ref={menuRef}
             role="menu"
@@ -552,6 +579,15 @@ export function PdfPage({
               <ChatIcon className="h-4 w-4" />
               {menuHighlight.comment ? "Edit comment" : "Comment"}
             </button>
+            {menuHighlight.threadnotesExcerptId && (
+              <button
+                role="menuitem"
+                onClick={() => setMenu({ ...menu, mode: "connect" })}
+                className="rounded-md px-2 py-1 text-sm hover:bg-surface"
+              >
+                Connect…
+              </button>
+            )}
             <button
               role="menuitem"
               onClick={() => {
