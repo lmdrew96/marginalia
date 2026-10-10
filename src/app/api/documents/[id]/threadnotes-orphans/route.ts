@@ -8,6 +8,7 @@ import {
   getArticleExcerpts,
   getThreadNotesSettings,
   saveHighlightAsExcerpt,
+  type ThreadNotesExcerpt,
 } from "@/lib/threadnotes";
 
 export const runtime = "nodejs";
@@ -46,15 +47,16 @@ const linkedDocument = async (
   return { userId, doc, apiKey, articleId: doc.threadnotesArticleId };
 };
 
+type SyncState = { excerpts: Map<string, ThreadNotesExcerpt>; synced: Highlight[] };
+
 /**
- * Highlights whose excerpt is gone from ThreadNotes, or null when
- * ThreadNotes couldn't say (down, timed out, article trashed).
+ * This document's settled, linked highlights plus the article's excerpts by
+ * id, or null when ThreadNotes couldn't say (down, timed out, article trashed).
  */
-const findOrphans = async (linked: Linked): Promise<Highlight[] | null> => {
-  let excerptIds: Set<string>;
+const loadSyncState = async (linked: Linked): Promise<SyncState | null> => {
+  let excerpts: ThreadNotesExcerpt[];
   try {
-    const excerpts = await getArticleExcerpts(linked.apiKey, linked.articleId);
-    excerptIds = new Set(excerpts.map((e) => e.id));
+    excerpts = await getArticleExcerpts(linked.apiKey, linked.articleId);
   } catch (err) {
     console.error(`Listing excerpts of ThreadNotes article ${linked.articleId} failed:`, err);
     return null;
@@ -69,18 +71,53 @@ const findOrphans = async (linked: Linked): Promise<Highlight[] | null> => {
         lt(highlights.createdAt, new Date(Date.now() - SETTLE_MS)),
       ),
     );
-  return synced.filter((h) => !excerptIds.has(h.threadnotesExcerptId!));
+  return { excerpts: new Map(excerpts.map((e) => [e.id, e])), synced };
 };
 
-/** Ids of this document's highlights whose excerpt was deleted in ThreadNotes. */
+/** Highlights whose excerpt is gone from ThreadNotes. */
+const findOrphans = ({ excerpts, synced }: SyncState): Highlight[] =>
+  synced.filter((h) => !excerpts.has(h.threadnotesExcerptId!));
+
+/**
+ * Copies excerpt comments edited in ThreadNotes onto their highlights.
+ * ThreadNotes wins: Marginalia pushes every margin-note save, so the two
+ * only differ after an edit made there. Page edits aren't pulled — a
+ * highlight's offsets belong to its page, so moving it would misplace it.
+ */
+const pullComments = async ({ excerpts, synced }: SyncState): Promise<Highlight[]> => {
+  const stale = synced.flatMap((h) => {
+    const excerpt = excerpts.get(h.threadnotesExcerptId!);
+    if (!excerpt) return [];
+    const comment = excerpt.comment?.trim() || null;
+    return comment === (h.comment?.trim() || null) ? [] : [{ id: h.id, comment }];
+  });
+  const updated = await Promise.all(
+    stale.map(({ id, comment }) =>
+      db.update(highlights).set({ comment }).where(eq(highlights.id, id)).returning(),
+    ),
+  );
+  return updated.flat();
+};
+
+/**
+ * Ids of this document's highlights whose excerpt was deleted in ThreadNotes,
+ * plus the highlights whose comment was just updated from ThreadNotes.
+ */
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const linked = await linkedDocument(params);
   if (linked instanceof NextResponse) return linked;
-  const orphans = await findOrphans(linked);
-  return NextResponse.json({ highlightIds: (orphans ?? []).map((h) => h.id) });
+  const state = await loadSyncState(linked);
+  if (!state) return NextResponse.json({ highlightIds: [], updated: [] });
+  let updated: Highlight[] = [];
+  try {
+    updated = await pullComments(state);
+  } catch (err) {
+    console.error(`Pulling ThreadNotes comments onto document ${linked.doc.id} failed:`, err);
+  }
+  return NextResponse.json({ highlightIds: findOrphans(state).map((h) => h.id), updated });
 }
 
 type Action = "readd" | "remove" | "keep";
@@ -110,15 +147,15 @@ export async function POST(
   const linked = await linkedDocument(params);
   if (linked instanceof NextResponse) return linked;
 
-  const orphans = await findOrphans(linked);
-  if (!orphans) {
+  const state = await loadSyncState(linked);
+  if (!state) {
     return NextResponse.json(
       { error: "Couldn't check with ThreadNotes. Try again." },
       { status: 502 },
     );
   }
   const wanted = new Set<string>(highlightIds);
-  const targets = orphans.filter((h) => wanted.has(h.id));
+  const targets = findOrphans(state).filter((h) => wanted.has(h.id));
   const ids = targets.map((h) => h.id);
 
   switch (action as Action) {

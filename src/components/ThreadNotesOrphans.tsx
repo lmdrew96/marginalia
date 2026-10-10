@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Highlight } from "@/db/schema";
 import { CloseIcon } from "@/components/icons";
 
@@ -34,6 +34,11 @@ export const ThreadNotesOrphans = ({
   const [dismissed, setDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The check runs once per paper, so it reads the latest callback from here.
+  const onResolvedRef = useRef(onResolved);
+  useEffect(() => {
+    onResolvedRef.current = onResolved;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +46,11 @@ export const ThreadNotesOrphans = ({
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error ?? `status ${res.status}`);
-        if (!cancelled) setOrphanIds(body.highlightIds ?? []);
+        if (cancelled) return;
+        setOrphanIds(body.highlightIds ?? []);
+        // Comments edited in ThreadNotes, already saved here by the server.
+        const updated: Highlight[] = body.updated ?? [];
+        if (updated.length > 0) onResolvedRef.current({ removed: [], updated });
       })
       .catch((err) => console.error("Checking ThreadNotes excerpts failed:", err));
     return () => {
